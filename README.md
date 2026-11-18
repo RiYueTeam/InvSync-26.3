@@ -69,6 +69,17 @@ Linux 可将路径改成 `/srv/minecraft/shared-invsync`。SQLite 还会创建 `
 
 验证时，用同一账号进入 A 服，放一件可辨识的物品进背包并正常退出，再进入 B 服确认物品和数量。也可以在 B 服修改数量，退出后回 A 服确认反向同步。若使用代理，检查所有后端收到的玩家 UUID 是否一致。
 
+### MySQL 双服实测
+
+使用发布页的 JAR 在本机运行两台独立的 Minecraft Java 26.3 服务端。两服均使用 Java 25 和 Fabric Loader 0.19.5，并连接同一个 MySQL 8.4.13 数据库。测试客户端使用同一个玩家 UUID 登录，每次正常退服后再进入另一台服务器。
+
+| 切换方向 | 目标服背包 | 目标服经验 | 目标服进度 |
+| --- | --- | --- | --- |
+| A → B | 7 颗钻石 | 17 级，当前等级内 6 点 | `minecraft:story/mine_stone` 已完成 |
+| B → A | 同一快捷栏槽位更新为 11 颗绿宝石 | 23 级，当前等级内 9 点 | `minecraft:story/upgrade_tools` 已完成，`minecraft:story/mine_stone` 已撤销 |
+
+B 服首次接收该玩家时没有本地玩家数据或进度记录。两次退服后都在 MySQL 的 `InvSync_base` 表中查到了同一 UUID 的更新记录。背包、经验和进度双向同步均通过。
+
 ## 从 InvSync 2.3.3 迁移
 
 1. 停止所有旧实例，备份数据库、配置和各服世界。SQLite 应在停服后备份数据库目录。MySQL 可导出原数据库。
@@ -100,7 +111,7 @@ Linux 或 macOS：
 bash ./gradlew build
 ```
 
-构建产物位于 `build/libs/`。发布页的 JAR 由 JDK 25 编译和打包。已在 Minecraft 26.3 和 Fabric Loader 0.19.5 上验证 SQLite 保存、读取、实例间交接和 1.20.1 样例数据迁移。MySQL 仍待联机验证。本次 Gradle 构建因依赖下载停滞，完整的 Gradle 构建流程仍待验证。
+构建产物位于 `build/libs/`。发布页的 JAR 由 JDK 25 编译和打包。已在 Minecraft 26.3 和 Fabric Loader 0.19.5 上验证 SQLite 保存、读取、实例间交接和 1.20.1 样例数据迁移。MySQL 双服切换结果见 [MySQL 双服实测](#mysql-双服实测)。本次 Gradle 构建因依赖下载停滞，完整的 Gradle 构建流程仍待验证。
 
 ## 上游与许可证
 
