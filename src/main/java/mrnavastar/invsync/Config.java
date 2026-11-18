@@ -16,6 +16,10 @@ public class Config {
     public String MYSQL_PORT = "3306";
     public String MYSQL_USERNAME = "username";
     public String MYSQL_PASSWORD = "password";
+    public String MYSQL_SSL_MODE = "PREFERRED";
+    public String MYSQL_TRUST_STORE = "";
+    public String MYSQL_TRUST_STORE_TYPE = "PKCS12";
+    public String MYSQL_TRUST_STORE_PASSWORD = "";
     public boolean SYNC_PLAYER_DATA = true;
     public boolean SYNC_ADVANCEMENTS = true;
     public boolean SYNC_STATS = true;

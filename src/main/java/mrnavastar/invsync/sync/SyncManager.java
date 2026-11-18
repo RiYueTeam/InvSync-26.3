@@ -81,6 +81,11 @@ public final class SyncManager {
             data = DataFixTypes.PLAYER.updateToCurrentVersion(
                     server.getFixerUpper(), data, data.getIntOr("DataVersion", LEGACY_DATA_VERSION));
             CompoundTag local = playerTag(player);
+            if (data.getBooleanOr(SharedPlayerData.PARTIAL, false)) {
+                SharedPlayerData.copyFields(data, local);
+                player.load(TagValueInput.create(ProblemReporter.DISCARDING, player.registryAccess(), local));
+                return;
+            }
             for (String field : localFields) {
                 var value = local.get(field);
                 if (value == null) {

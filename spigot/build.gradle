@@ -1,0 +1,61 @@
+plugins {
+    id 'java'
+}
+
+version = '2.3.6+26.3'
+group = 'mrnavastar'
+
+java {
+    toolchain.languageVersion = JavaLanguageVersion.of(25)
+}
+
+repositories {
+    mavenCentral()
+    maven { url = 'https://libraries.minecraft.net/' }
+    maven { url = 'https://hub.spigotmc.org/nexus/repository/snapshots/' }
+}
+
+configurations {
+    bundled
+    implementation.extendsFrom(bundled)
+}
+
+dependencies {
+    def localApi = providers.gradleProperty('spigotApiJar')
+    if (localApi.present) {
+        compileOnly files(localApi)
+    } else {
+        compileOnly 'org.spigotmc:spigot-api:26.3-R0.1-SNAPSHOT'
+    }
+    compileOnly 'com.mojang:datafixerupper:10.0.21'
+    compileOnly 'com.mojang:brigadier:1.3.11'
+    compileOnly 'com.google.code.gson:gson:2.14.0'
+    compileOnly 'org.jspecify:jspecify:1.0.0'
+    compileOnly 'it.unimi.dsi:fastutil:8.5.18'
+    compileOnly files(providers.gradleProperty('spigotServerJar'))
+    bundled('com.mysql:mysql-connector-j:9.6.0') { transitive = false }
+}
+
+sourceSets.main.java {
+    srcDir '../src/main/java'
+    include 'mrnavastar/invsync/spigot/**'
+    include 'mrnavastar/invsync/sync/PlayerStore.java'
+    include 'mrnavastar/invsync/sync/SharedPlayerData.java'
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+}
+
+tasks.named('jar') {
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    from('../LICENSE')
+    from({ configurations.bundled.collect { zipTree(it) } }) {
+        eachFile { file ->
+            if (file.name == 'LICENSE' && file.path == 'LICENSE') {
+                file.path = 'META-INF/licenses/mysql-connector-j-LICENSE'
+            }
+        }
+    }
+    exclude 'META-INF/*.SF', 'META-INF/*.RSA', 'META-INF/*.DSA', 'module-info.class', 'META-INF/versions/**/module-info.class'
+}

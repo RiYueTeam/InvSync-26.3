@@ -1,0 +1,5 @@
+name: InvSyncSpigot
+main: mrnavastar.invsync.spigot.InvSyncSpigot
+version: 2.3.6+26.3
+api-version: '26.3'
+description: Shares vanilla inventory, experience and advancements with InvSync on Fabric.

@@ -1,7 +1,5 @@
 package mrnavastar.invsync.sync;
 
-import mrnavastar.invsync.Config;
-
 import java.io.IOException;
 import java.nio.channels.FileChannel;
 import java.nio.channels.OverlappingFileLockException;
@@ -11,6 +9,7 @@ import java.nio.file.StandardOpenOption;
 import java.sql.Connection;
 import java.sql.Driver;
 import java.sql.SQLException;
+import java.util.Locale;
 import java.util.Properties;
 import java.util.UUID;
 
@@ -22,34 +21,78 @@ public final class PlayerStore {
     private final Driver driver;
     private final String lockPrefix;
 
-    public PlayerStore(Config config) throws IOException, SQLException {
-        mysql = switch (config.DATABASE_TYPE) {
+    public record Settings(String type, String name, String sqliteDirectory, String address, String port,
+                           String username, String password, TlsSettings tls) {}
+
+    public record TlsSettings(String mode, String trustStore, String trustStoreType, String trustStorePassword) {
+        private void configure(Properties properties) throws IOException {
+            String sslMode = mode.trim().toUpperCase(Locale.ROOT);
+            switch (sslMode) {
+                case "DISABLED", "PREFERRED", "REQUIRED", "VERIFY_CA", "VERIFY_IDENTITY" ->
+                        properties.setProperty("sslMode", sslMode);
+                default -> throw new IllegalArgumentException("Invalid MySQL sslMode: " + mode);
+            }
+            if (trustStore.isBlank()) return;
+            if (!sslMode.equals("VERIFY_CA") && !sslMode.equals("VERIFY_IDENTITY")) {
+                throw new IllegalArgumentException("A MySQL trust store requires VERIFY_CA or VERIFY_IDENTITY");
+            }
+
+            Path path = Path.of(trustStore).toAbsolutePath().normalize();
+            if (!Files.isRegularFile(path) || !Files.isReadable(path)) {
+                throw new IOException("MySQL trust store is not a readable file: " + path);
+            }
+            String type = trustStoreType.trim().toUpperCase(Locale.ROOT);
+            if (!type.equals("PKCS12") && !type.equals("JKS")) {
+                throw new IllegalArgumentException("MySQL trust store type must be PKCS12 or JKS");
+            }
+            properties.setProperty("trustCertificateKeyStoreUrl", path.toUri().toASCIIString());
+            properties.setProperty("trustCertificateKeyStoreType", type);
+            properties.setProperty("trustCertificateKeyStorePassword", trustStorePassword);
+            properties.setProperty("fallbackToSystemTrustStore", "false");
+        }
+    }
+
+    public PlayerStore(Settings config) throws IOException, SQLException {
+        mysql = switch (config.type()) {
             case "MYSQL" -> true;
             case "SQLITE" -> false;
             default -> throw new IllegalArgumentException("DATABASE_TYPE must be SQLITE or MYSQL");
         };
 
-        if (!config.DATABASE_NAME.matches("[a-zA-Z0-9_-]+")) {
+        if (!config.name().matches("[a-zA-Z0-9_-]+")) {
             throw new IllegalArgumentException("Invalid InvSync database name");
         }
 
         if (mysql) {
-            url = "jdbc:mysql://" + config.MYSQL_ADDRESS + ":" + config.MYSQL_PORT + "/" + config.DATABASE_NAME;
-            properties.setProperty("user", config.MYSQL_USERNAME);
-            properties.setProperty("password", config.MYSQL_PASSWORD);
+            String host = config.address().trim();
+            if (!host.matches("[a-zA-Z0-9_.-]+|\\[[0-9a-fA-F:.]+]")) {
+                throw new IllegalArgumentException("MySQL address must be a hostname or IP address");
+            }
+            String port = config.port().trim();
+            if (!port.matches("[0-9]{1,5}") || Integer.parseInt(port) < 1 || Integer.parseInt(port) > 65535) {
+                throw new IllegalArgumentException("MySQL port must be between 1 and 65535");
+            }
+            url = "jdbc:mysql://" + host + ":" + port + "/" + config.name();
+            config.tls().configure(properties);
+            properties.setProperty("user", config.username());
+            properties.setProperty("password", config.password());
             properties.setProperty("connectTimeout", "3000");
             properties.setProperty("socketTimeout", "3000");
             lockPrefix = "InvSync:" + UUID.nameUUIDFromBytes(
-                    config.DATABASE_NAME.getBytes(java.nio.charset.StandardCharsets.UTF_8)).toString().substring(0, 16) + ":";
+                    config.name().getBytes(java.nio.charset.StandardCharsets.UTF_8)).toString().substring(0, 16) + ":";
             lockDirectory = null;
             driver = new com.mysql.cj.jdbc.Driver();
         } else {
-            Path dir = Files.createDirectories(Path.of(config.SQLITE_DIRECTORY)).toRealPath();
-            url = "jdbc:sqlite:" + dir.resolve(config.DATABASE_NAME + ".db");
+            Path dir = Files.createDirectories(Path.of(config.sqliteDirectory())).toRealPath();
+            url = "jdbc:sqlite:" + dir.resolve(config.name() + ".db");
             lockPrefix = null;
-            lockDirectory = Files.createDirectories(dir.resolve(config.DATABASE_NAME + ".locks"));
+            lockDirectory = Files.createDirectories(dir.resolve(config.name() + ".locks"));
             properties.setProperty("busy_timeout", "3000");
-            driver = new org.sqlite.JDBC();
+            try {
+                driver = Class.forName("org.sqlite.JDBC").asSubclass(Driver.class).getConstructor().newInstance();
+            } catch (ReflectiveOperationException e) {
+                throw new SQLException("SQLite JDBC driver unavailable", e);
+            }
         }
 
         try (Connection connection = connect(); var statement = connection.createStatement()) {
@@ -69,7 +112,7 @@ public final class PlayerStore {
         return driver.connect(url, properties);
     }
 
-    Session acquire(UUID player) throws SQLException, IOException {
+    public Session acquire(UUID player) throws SQLException, IOException {
         String id = player.toString();
         Connection connection = connect();
         FileChannel channel = null;
@@ -101,10 +144,10 @@ public final class PlayerStore {
         }
     }
 
-    record Snapshot(String playerData, String advancements, String stats) {}
+    public record Snapshot(String playerData, String advancements, String stats) {}
 
-    record Session(Connection connection, FileChannel lock, String id, boolean mysql) implements AutoCloseable {
-        Snapshot load() throws SQLException {
+    public record Session(Connection connection, FileChannel lock, String id, boolean mysql) implements AutoCloseable {
+        public Snapshot load() throws SQLException {
             try (var statement = connection.prepareStatement(
                     "SELECT playerData, advancements, stats FROM InvSync_base WHERE ID = ?")) {
                 statement.setString(1, id);
@@ -115,7 +158,7 @@ public final class PlayerStore {
             }
         }
 
-        void save(Snapshot data) throws SQLException {
+        public void save(Snapshot data) throws SQLException {
             String update = mysql ? """
                     ON DUPLICATE KEY UPDATE playerData = COALESCE(VALUES(playerData), playerData),
                     advancements = COALESCE(VALUES(advancements), advancements), stats = COALESCE(VALUES(stats), stats)

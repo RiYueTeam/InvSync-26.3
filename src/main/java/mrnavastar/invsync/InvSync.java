@@ -17,7 +17,12 @@ public class InvSync implements ModInitializer {
     public void onInitialize() {
         try {
             Config config = Config.load();
-            sync = new SyncManager(config, new PlayerStore(config));
+            var database = new PlayerStore.Settings(
+                    config.DATABASE_TYPE, config.DATABASE_NAME, config.SQLITE_DIRECTORY,
+                    config.MYSQL_ADDRESS, config.MYSQL_PORT, config.MYSQL_USERNAME, config.MYSQL_PASSWORD,
+                    new PlayerStore.TlsSettings(config.MYSQL_SSL_MODE, config.MYSQL_TRUST_STORE,
+                            config.MYSQL_TRUST_STORE_TYPE, config.MYSQL_TRUST_STORE_PASSWORD));
+            sync = new SyncManager(config, new PlayerStore(database));
         } catch (IOException | SQLException e) {
             throw new IllegalStateException("Could not initialize InvSync", e);
         }

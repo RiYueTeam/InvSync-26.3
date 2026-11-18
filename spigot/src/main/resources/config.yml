@@ -1,0 +1,11 @@
+mysql:
+  host: 127.0.0.1
+  port: 3306
+  database: InvSync
+  username: invsync
+  password: change-me
+  tls:
+    mode: PREFERRED
+    trust-store: ''
+    trust-store-type: PKCS12
+    trust-store-password: ''
