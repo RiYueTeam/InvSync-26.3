@@ -26,6 +26,8 @@ bash scripts/bootstrap-mysql.sh
 
 脚本每次运行都会创建新容器和新数据卷。已有数据库继续使用下方的配置工具。服务端启动后，可用脚本打印的容器名查看日志或重启容器。
 
+**真实 Linux Docker 实测通过。** 使用 MySQL 8.4.9 在独立回环端口完成容器初始化、自动建库及双服配置生成。生成的两份配置均通过 `VERIFY_IDENTITY` 建立 TLS 1.3 连接，并验证了用 Fabric 配置写入的测试记录可由 Spigot 配置从同一库读出。修复后的脚本可从 [2.3.7 Release](https://github.com/RiYueTeam/InvSync-26.3/releases/tag/v2.3.7-26.3) 下载。
+
 ## 一键建库和生成配置
 
 先准备一台已启动 TLS 的 MySQL，以及有建库、创建用户和授权权限的管理账号。脚本用 Fabric JAR 里的 JDBC 驱动，运行时只需要另备 **JDK 25**。

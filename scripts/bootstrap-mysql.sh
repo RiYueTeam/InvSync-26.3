@@ -93,7 +93,7 @@ docker run -d --name "$container" --restart unless-stopped --network host --user
     --mount "type=volume,source=$container-data,target=/var/lib/mysql" \
     --mount "type=bind,source=$bootstrap,target=/invsync-bootstrap,readonly" \
     --env MYSQL_ROOT_PASSWORD_FILE=/invsync-bootstrap/root-password \
-    --env MYSQL_ROOT_HOST=localhost \
+    --env MYSQL_ROOT_HOST=127.0.0.1 \
     --entrypoint /bin/sh "$image" -ec '
         install -d -m 755 /run/invsync-tls
         install -m 644 /invsync-bootstrap/ca.pem /invsync-bootstrap/server-cert.pem /run/invsync-tls/
