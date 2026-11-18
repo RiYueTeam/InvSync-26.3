@@ -2,16 +2,105 @@
 
 InvSync 可以在不同的 Minecraft 世界或服务器之间同步同一玩家的背包、末影箱、经验、血量、饥饿值、状态效果、原版统计和进度。玩家按 **UUID** 匹配。坐标、朝向、维度和重生点由各服独立管理。
 
+## Linux 从零一键启动 MySQL
+
+在准备运行数据库的 Linux 主机上，先确认本机 Docker Engine 正在运行，当前用户能执行 `docker info`，并且 `openssl`、`curl`、`sha256sum` 和 JDK 25 在 `PATH` 中。把 `bootstrap-mysql.sh` 与 `SetupMySql.java` 一起放进 `scripts/`，然后在它的上一级目录运行。
+
+```bash
+bash scripts/bootstrap-mysql.sh
+```
+
+脚本会从 Maven Central 下载固定版本的 MySQL Connector/J 9.6.0，核对 SHA-256 后再启动 MySQL。数据库机器只需要这两个脚本。Fabric 和 Spigot 的 JAR 各自装在对应游戏服上。
+
+| 提示 | 两台不同机器的填写示例 |
+| --- | --- |
+| 数据库监听的本机 IPv4 | `10.0.0.5`，这必须是数据库主机已经拥有的地址 |
+| 两服连接 MySQL 的域名或 IPv4 | `10.0.0.5`，或两服均能解析到该地址的私网域名 |
+| Fabric 来源 IPv4 | `10.0.0.5`，例如 Fabric 与数据库同机且通过该地址连接 |
+| Spigot 来源 IPv4 | `10.0.0.6`，填数据库实际看到的来源地址 |
+| MySQL 端口 | `3306`，端口已被占用时选一个空闲端口 |
+
+脚本会自动启动 MySQL 8.4、签发私有 CA 和数据库证书、强制 TLS、创建 `InvSync` 库和 `invsync_user`，最后打印两份配置的目录。把输出的 `Fabric/` 和 `Spigot/` **内部文件**分别复制到对应服务端根目录，再安装相应 JAR 并启动。连接配置使用 `VERIFY_IDENTITY`。
+
+跨机器时，在数据库主机上只向两台游戏服的实际来源开放该 MySQL 端口。根账号供本机初始化使用，游戏服使用按来源 IPv4 限定的同步账号。保留脚本打印的数据库工作目录和 Docker 数据卷，工作目录包含服务端证书、CA 私钥和管理密码。给游戏服复制的文件限于输出的 `Fabric/`、`Spigot/` 两个配置目录。
+
+脚本每次运行都会创建新容器和新数据卷。已有数据库继续使用下方的配置工具。服务端启动后，可用脚本打印的容器名查看日志或重启容器。
+
+## 一键建库和生成配置
+
+先准备一台已启动 TLS 的 MySQL，以及有建库、创建用户和授权权限的管理账号。脚本用 Fabric JAR 里的 JDBC 驱动，运行时只需要另备 **JDK 25**。
+
+在项目目录打开终端，运行一条命令。
+
+```powershell
+java scripts/SetupMySql.java build/libs/invsync-2.3.7+26.3.jar
+```
+
+如果 Fabric JAR 在别处，把命令最后一段换成它的路径。脚本会依次询问以下信息。
+
+| 输入项 | 怎么填 |
+| --- | --- |
+| MySQL 域名和端口 | 域名填证书上的名称，端口默认 `3306` |
+| 库名和新同步账号 | 默认 `InvSync` 和 `invsync_user`。同步密码由脚本随机生成 |
+| Fabric 和 Spigot 的来源地址 | 填 MySQL 看到的两台游戏服的来源 IP 或主机名。两端来源相同，第二项直接回车 |
+| 私有 CA | 证书已被 Java 信任时直接回车。使用私有 CA 时填 MySQL 提供的 CA PEM 文件，脚本会生成两端的 PKCS12 信任库 |
+| 管理账号和密码 | 输入有建库、创建用户和授权权限的账号。密码输入时隐藏 |
+
+成功后会显示一个 `invsync-config-*` 目录。把其中 `Fabric/` 和 `Spigot/` **里面的文件**分别复制到两台服务端根目录，保留子目录结构。停服复制后再启动，用同一 UUID 试切服。配置文件包含生成的同步密码，请只发给对应服务器的管理员。
+
+脚本和两端配置都使用 `VERIFY_IDENTITY`。新建的同步账号要求 TLS，来源限制为填入的地址，权限只覆盖对应库的 `InvSync_base` 表。如果库已存在，脚本会使用该库并保留已有数据。若同名来源账号已存在，换一个新的同步账号名再运行。
+
+已用脚本生成的配置和信任库启动本地 Fabric 与 Spigot 26.3，确认通过同一个 MySQL 8.4.13 的 TLS 1.3 完成双向切服。测试还确认了同名来源账号会保留，证书主机名不匹配时建库流程会拒绝连接。
+
+## 三步配置 Fabric + Spigot
+
+已经有 MySQL 时，按这三步配置。两端都使用 Minecraft 26.3、Java 25 和 InvSync 2.3.7。
+
+1. **装对应的 JAR。** Fabric 的 `invsync-2.3.7+26.3.jar` 放进 `mods/`。Spigot 的 `invsync-spigot-2.3.7+26.3.jar` 放进 `plugins/`。从旧版升级前，先停服备份两个世界和数据库。
+2. **照抄下方两份配置。** 把 `db.example.net`、`3306`、`invsync`、`invsync_user` 和 `换成数据库密码` 改成实际值。域名要与数据库证书匹配，库名要在两端完全一致。数据库管理员可先建好该库，账号需要在该库拥有建表、查询、插入和更新权限。
+3. **启动并切服验收。** 用同一账号在 A 服把一件物品放入末影箱，正常退出后进 B 服确认。两端应识别为同一个玩家 UUID。
+
+**Fabric** 的文件是 `config/invsync.json`。
+
+```json
+{
+  "DATABASE_TYPE": "MYSQL",
+  "DATABASE_NAME": "invsync",
+  "MYSQL_ADDRESS": "db.example.net",
+  "MYSQL_PORT": "3306",
+  "MYSQL_USERNAME": "invsync_user",
+  "MYSQL_PASSWORD": "换成数据库密码",
+  "MYSQL_SSL_MODE": "VERIFY_IDENTITY",
+  "SYNC_PLAYER_DATA": true,
+  "SYNC_ADVANCEMENTS": true
+}
+```
+
+**Spigot** 的文件是 `plugins/InvSyncSpigot/config.yml`。
+
+```yaml
+mysql:
+  host: db.example.net
+  port: 3306
+  database: invsync
+  username: invsync_user
+  password: '换成数据库密码'
+  tls:
+    mode: VERIFY_IDENTITY
+```
+
+数据库证书如果受 Java 默认信任库信任，上面两份配置就够了。自签证书或私有 CA 需要先按 [MySQL TLS](#mysql-tls) 导入 CA，再填写两端的信任库路径。两台游戏服都要能访问数据库端口。
+
 ## 安装
 
 1. 使用 **Minecraft Java 版 26.3**、**Java 25** 和 **Fabric Loader 0.19.5 或更新版本**。可以在启动服务器的环境里运行 `java -version` 检查 Java 版本。
-2. 从 [2.3.6 发布页](https://github.com/RiYueTeam/InvSync-26.3/releases/tag/v2.3.6-26.3) 下载对应的 JAR，或使用下表中的本地构建产物。单人世界使用对应 Fabric 实例的 `mods/` 目录。
+2. 从 [2.3.7 发布页](https://github.com/RiYueTeam/InvSync-26.3/releases/tag/v2.3.7-26.3) 下载对应的 JAR，或使用下表中的本地构建产物。单人世界使用对应 Fabric 实例的 `mods/` 目录。
 3. 首次启动后按下表找到配置文件，停服修改配置，再重启。普通联机客户端可以直接连接，数据库驱动已随 JAR 打包。
 
 | 服务端 | 本地 JAR | 安装目录 | 配置文件 |
 | --- | --- | --- | --- |
-| Fabric | `build/libs/invsync-2.3.6+26.3.jar` | `mods/` | `config/invsync.json` |
-| Spigot | `spigot/build/libs/invsync-spigot-2.3.6+26.3.jar` | `plugins/` | `plugins/InvSyncSpigot/config.yml` |
+| Fabric | `build/libs/invsync-2.3.7+26.3.jar` | `mods/` | `config/invsync.json` |
+| Spigot | `spigot/build/libs/invsync-spigot-2.3.7+26.3.jar` | `plugins/` | `plugins/InvSyncSpigot/config.yml` |
 
 以下 SQLite 示例适用于 Fabric。Fabric 与 Spigot 混用时，两端都选 MySQL。
 
@@ -64,7 +153,7 @@ Linux 可将路径改成 `/srv/minecraft/shared-invsync`。SQLite 还会创建 `
 
 ## MySQL TLS
 
-Fabric 和 Spigot 的 2.3.6 版都支持 MySQL TLS。跨机器部署时，使用 `VERIFY_IDENTITY` 同时校验证书的信任链和数据库主机名。连接地址应与服务器证书 SAN 中的 DNS 名称匹配。用 IP 连接时，证书 SAN 需要包含对应的 IP 地址。
+Fabric 和 Spigot 从 2.3.6 起都支持 MySQL TLS。跨机器部署时，使用 `VERIFY_IDENTITY` 同时校验证书的信任链和数据库主机名。连接地址应与服务器证书 SAN 中的 DNS 名称匹配。用 IP 连接时，证书 SAN 需要包含对应的 IP 地址。
 
 | Fabric 的 `config/invsync.json` | Spigot 的 `mysql.tls` | 说明 |
 | --- | --- | --- |
@@ -150,7 +239,7 @@ B 服首次接收该玩家时没有本地玩家数据或进度记录。两次退
 
 ## Fabric 与 Spigot 混合端
 
-混合端需要在两端使用 **Minecraft 26.3、Java 25 和 InvSync 2.3.6**。Fabric 服使用本项目的 Fabric JAR，Spigot 服使用 `invsync-spigot-2.3.6+26.3.jar`。
+混合端需要在两端使用 **Minecraft 26.3、Java 25 和 InvSync 2.3.7**。Fabric 服使用本项目的 Fabric JAR，Spigot 服使用 `invsync-spigot-2.3.7+26.3.jar`。
 
 1. 在 Fabric 服的 `mods/` 安装新版，按上面的 MySQL 示例配置 `config/invsync.json`，开启 `SYNC_PLAYER_DATA` 和 `SYNC_ADVANCEMENTS`。
 2. 在 Spigot 服的 `plugins/` 放入配套插件。启动一次生成 `plugins/InvSyncSpigot/config.yml`，然后停服填写数据库连接信息。
@@ -165,21 +254,23 @@ mysql:
   password: '填写实际密码'
 ```
 
-混合端共享原版背包、快捷栏、盔甲、副手、经验和原版进度。Spigot 不参与末影箱、血量、饥饿值和统计等其他类别的同步，写回时会保留 Fabric 已存的其他字段。含有 Spigot 无法解析的物品时，插件会拒绝加载该背包。
+混合端共享原版背包、快捷栏、盔甲、副手、末影箱、经验和原版进度。末影箱按槽位整体同步，清空后切服也会同步空箱。血量、饥饿值和统计等字段由 Fabric 端管理，Spigot 写回时会保留数据库中已有的这些字段。背包或末影箱含有 Spigot 无法解析的物品时，插件会拒绝加载该玩家的共享数据。
 
-玩家可以先在任一端进服。首次在 Spigot 产生的记录只包含混合端支持的玩家字段，Fabric 2.3.6 会把这些字段合并进自己的本地玩家数据。
+玩家可以先在任一端进服。首次在 Spigot 产生的记录只包含混合端支持的玩家字段，Fabric 2.3.7 会把这些字段合并进自己的本地玩家数据。
 
-### 混合端实测
+从 2.3.6 升级前，停服备份两端的世界目录和 MySQL。如果两端原有末影箱不同，先决定以哪个版本为准。完整共享记录里的末影箱内容会在进服时应用到本地，两边的内容不会合并。历史 Spigot 部分记录缺少末影箱字段时，2.3.7 会保留玩家当前所在服的末影箱，直到新版首次保存该玩家。
 
-已在本机用 Fabric Loader 0.19.5、Spigot 26.3 build 4664 和 MySQL 8.4.13 实测。两服连接同一个数据库，测试客户端用同一 UUID 退出一服后再登录另一服。
+### 2.3.7 混合端 TLS 实测
+
+已在本机用 Fabric Loader 0.19.5、Spigot 26.3 build 4664 和 MySQL 8.4.13 实测。两服通过 `VERIFY_IDENTITY` 连接同一个数据库，MySQL 会话状态确认两端使用 TLS 1.3。测试客户端用同一 UUID 退出一服后再登录另一服。
 
 | 切换方向 | 目标服核对结果 |
 | --- | --- |
 | Fabric → Spigot | 7 颗钻石、17 级和当前等级内 6 点经验，`mine_stone` 已完成，头盔和副手盾牌已同步 |
-| Spigot → Fabric | 11 颗绿宝石、23 级和当前等级内 9 点经验，`upgrade_tools` 已完成、`mine_stone` 已撤销，副手更新为火把 |
-| 新玩家先进入 Spigot，再进入 Fabric | 13 块铁锭、12 级和当前等级内 4 点经验，`mine_stone` 已完成 |
+| Spigot → Fabric | 11 颗绿宝石、23 级和当前等级内 9 点经验，`upgrade_tools` 已完成、`mine_stone` 已撤销，副手更新为火把，末影箱第 0 槽更新为 2 个铜锭，第 26 槽有 3 个苹果 |
+| 新玩家先进入 Spigot，再进入 Fabric | 13 块铁锭、12 级和当前等级内 4 点经验，`mine_stone` 已完成，末影箱第 5 槽有 6 个紫水晶碎片 |
 
-往返测试也核对了 Fabric 的原有末影箱内容。
+分别在 Fabric 和 Spigot 清空末影箱后切服，目标服都显示为空。对缺少 `EnderItems` 的历史 Spigot 部分记录，两端也都验证了首次读取会保留玩家原有的本地末影箱。槽位编号从 0 开始。
 
 ### 构建 Spigot 插件
 
@@ -217,7 +308,7 @@ Linux 或 macOS：
 bash ./gradlew build
 ```
 
-Fabric 构建产物位于 `build/libs/`。本地参与 TLS 实测的 Fabric 2.3.6 JAR 由 JDK 25 编译和打包，Fabric 的完整 Gradle 构建曾因依赖下载停滞，仍待验证。Spigot 2.3.6 插件已用 Gradle 构建，并使用该产物完成[双服 TLS 实测](#tls-双服实测)。
+Fabric 构建产物位于 `build/libs/`。本地参与 TLS 实测的 Fabric 2.3.7 JAR 由 JDK 25 编译和打包，Fabric 的完整 Gradle 构建曾因依赖下载停滞，仍待验证。Spigot 2.3.7 插件已用 Gradle 构建，并使用该产物完成混合端 TLS 实测。
 
 ## 上游与许可证
 

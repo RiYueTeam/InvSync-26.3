@@ -4,6 +4,7 @@ import com.google.gson.JsonParser;
 import mrnavastar.invsync.sync.PlayerStore;
 import mrnavastar.invsync.sync.SharedPlayerData;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.NbtOps;
 import net.minecraft.nbt.NbtUtils;
 import net.minecraft.nbt.TagParser;
@@ -135,6 +136,9 @@ public final class InvSyncSpigot extends JavaPlugin implements Listener {
                 data.putBoolean(SharedPlayerData.PARTIAL, true);
             }
             SharedPlayerData.copyFields(playerTag(handle), data);
+            if (data.get(SharedPlayerData.ENDER_ITEMS) == null) {
+                data.put(SharedPlayerData.ENDER_ITEMS, new ListTag());
+            }
             String advancementData = advancements.save(handle.getAdvancements(),
                     handle.level().getServer().getAdvancements(),
                     previous.advancements() == null ? null : JsonParser.parseString(previous.advancements()));
@@ -165,6 +169,8 @@ public final class InvSyncSpigot extends JavaPlugin implements Listener {
         var ops = RegistryOps.create(NbtOps.INSTANCE, player.registryAccess());
         var inventory = data.get("Inventory");
         if (inventory != null) ItemStackWithSlot.CODEC.listOf().parse(ops, inventory).getOrThrow();
+        var enderItems = data.get(SharedPlayerData.ENDER_ITEMS);
+        if (enderItems != null) ItemStackWithSlot.CODEC.listOf().parse(ops, enderItems).getOrThrow();
         var equipment = data.get("equipment");
         if (equipment != null) EntityEquipment.CODEC.parse(ops, equipment).getOrThrow();
     }
