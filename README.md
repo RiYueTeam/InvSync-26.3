@@ -5,7 +5,7 @@ InvSync 可以在不同的 Minecraft 世界或服务器之间同步同一玩家�
 ## 安装
 
 1. 使用 **Minecraft Java 版 26.3**、**Java 25** 和 **Fabric Loader 0.19.5 或更新版本**。可以在启动服务器的环境里运行 `java -version` 检查 Java 版本。
-2. 从 [2.3.6 发布页](https://github.com/Yarra2000/InvSync-26.3/releases/tag/v2.3.6-26.3) 下载对应的 JAR，或使用下表中的本地构建产物。单人世界使用对应 Fabric 实例的 `mods/` 目录。
+2. 从 [2.3.6 发布页](https://github.com/RiYueTeam/InvSync-26.3/releases/tag/v2.3.6-26.3) 下载对应的 JAR，或使用下表中的本地构建产物。单人世界使用对应 Fabric 实例的 `mods/` 目录。
 3. 首次启动后按下表找到配置文件，停服修改配置，再重启。普通联机客户端可以直接连接，数据库驱动已随 JAR 打包。
 
 | 服务端 | 本地 JAR | 安装目录 | 配置文件 |
