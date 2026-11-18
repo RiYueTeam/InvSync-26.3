@@ -4,7 +4,6 @@ import com.google.gson.JsonParser;
 import mrnavastar.invsync.sync.PlayerStore;
 import mrnavastar.invsync.sync.SharedPlayerData;
 import net.minecraft.nbt.CompoundTag;
-import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.NbtOps;
 import net.minecraft.nbt.NbtUtils;
 import net.minecraft.nbt.TagParser;
@@ -112,6 +111,7 @@ public final class InvSyncSpigot extends JavaPlugin implements Listener {
         var server = player.level().getServer();
         CompoundTag saved = parsePlayerData(player, snapshot.playerData());
         if (saved != null) {
+            SharedPlayerData.keepSupportedEnderItems(saved, player.getEnderChestInventory().getContainerSize());
             validateInventory(player, saved);
         }
         if (snapshot.advancements() != null) {
@@ -135,10 +135,10 @@ public final class InvSyncSpigot extends JavaPlugin implements Listener {
                 data = new CompoundTag();
                 data.putBoolean(SharedPlayerData.PARTIAL, true);
             }
+            var previousEnderItems = data.getListOrEmpty(SharedPlayerData.ENDER_ITEMS);
             SharedPlayerData.copyFields(playerTag(handle), data);
-            if (data.get(SharedPlayerData.ENDER_ITEMS) == null) {
-                data.put(SharedPlayerData.ENDER_ITEMS, new ListTag());
-            }
+            SharedPlayerData.preserveUnsupportedEnderItems(
+                    data, previousEnderItems, handle.getEnderChestInventory().getContainerSize());
             String advancementData = advancements.save(handle.getAdvancements(),
                     handle.level().getServer().getAdvancements(),
                     previous.advancements() == null ? null : JsonParser.parseString(previous.advancements()));

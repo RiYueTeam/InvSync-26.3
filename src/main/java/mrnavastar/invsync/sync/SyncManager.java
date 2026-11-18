@@ -77,9 +77,8 @@ public final class SyncManager {
             ((IServerStatHandler) player.getStats()).writeStatData(server, snapshot.stats());
         }
         if (config.SYNC_PLAYER_DATA && snapshot.playerData() != null) {
-            CompoundTag data = TagParser.parseCompoundFully(snapshot.playerData());
-            data = DataFixTypes.PLAYER.updateToCurrentVersion(
-                    server.getFixerUpper(), data, data.getIntOr("DataVersion", LEGACY_DATA_VERSION));
+            CompoundTag data = parsePlayerData(player, snapshot.playerData());
+            SharedPlayerData.keepSupportedEnderItems(data, player.getEnderChestInventory().getContainerSize());
             CompoundTag local = playerTag(player);
             if (data.getBooleanOr(SharedPlayerData.PARTIAL, false)) {
                 SharedPlayerData.copyFields(data, local);
@@ -107,6 +106,12 @@ public final class SyncManager {
             String playerData = null;
             if (config.SYNC_PLAYER_DATA) {
                 CompoundTag data = playerTag(player);
+                String previous = session.load().playerData();
+                if (previous != null) {
+                    var previousEnderItems = parsePlayerData(player, previous).getListOrEmpty(SharedPlayerData.ENDER_ITEMS);
+                    SharedPlayerData.preserveUnsupportedEnderItems(
+                            data, previousEnderItems, player.getEnderChestInventory().getContainerSize());
+                }
                 localFields.forEach(data::remove);
                 playerData = NbtUtils.addCurrentDataVersion(data).toString();
             }
@@ -117,6 +122,12 @@ public final class SyncManager {
         } catch (Exception e) {
             InvSync.LOGGER.error("Could not save InvSync data for {}", id, e);
         }
+    }
+
+    private static CompoundTag parsePlayerData(ServerPlayer player, String serialized) throws Exception {
+        CompoundTag data = TagParser.parseCompoundFully(serialized);
+        return DataFixTypes.PLAYER.updateToCurrentVersion(player.level().getServer().getFixerUpper(),
+                data, data.getIntOr("DataVersion", LEGACY_DATA_VERSION));
     }
 
     public void leave(ServerPlayer player) {
