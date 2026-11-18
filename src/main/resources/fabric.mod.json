@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "id": "invsync",
+  "version": "${version}",
+  "name": "InvSync",
+  "description": "Synchronizes Minecraft player data between servers.",
+  "authors": ["MrNavaStar"],
+  "license": "MIT",
+  "icon": "assets/invsync/icon.png",
+  "environment": "*",
+  "entrypoints": {
+    "main": ["mrnavastar.invsync.InvSync"]
+  },
+  "mixins": ["invsync.mixins.json"],
+  "depends": {
+    "fabricloader": ">=0.19.5",
+    "minecraft": "26.3",
+    "java": ">=25"
+  }
+}
