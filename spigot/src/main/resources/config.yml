@@ -1,4 +1,3 @@
-require-auth-callback: false
 server-id: spigot
 mysql:
   connect-timeout-ms: 3000

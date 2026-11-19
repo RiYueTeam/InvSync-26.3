@@ -14,11 +14,11 @@ import java.util.UUID;
 import java.util.HashMap;
 import java.util.Map;
 
-/** Both endpoints must establish the identity of the caller before using this store. */
+/** One-time codes pair two in-game roles on distinct servers. */
 public final class BindingCodes {
     public static final String HELP = """
             InvSync 跨服存档绑定
-            先在两服分别完成登录。绑定时请核对角色名和 UUID。
+            进服后即可领取绑定码。绑定时请核对角色名和 UUID。
             /invsync code — 在第一台服领取一次性绑定码，5 分钟有效。
             /invsync redeem <绑定码> — 在第二台服兑换并查看两个角色。
             /invsync keep here — 保留当前服角色的存档。
@@ -47,6 +47,72 @@ public final class BindingCodes {
                       login_id CHAR(36) PRIMARY KEY, save_id CHAR(36) NOT NULL
                     )
                     """);
+    }
+
+    private boolean sightingsReady;
+
+    // Discovery is advisory: missing grants or an offline database must not block admission.
+    private synchronized void ensureSightings(Connection c) throws SQLException {
+        if (sightingsReady) return;
+        try (var ddl = c.createStatement()) {
+            ddl.executeUpdate("""
+                    CREATE TABLE IF NOT EXISTS InvSync_seen_roles (
+                      server_id VARCHAR(64) NOT NULL, login_id CHAR(36) NOT NULL,
+                      player_name VARCHAR(64) NOT NULL, PRIMARY KEY(server_id, login_id)
+                    """ + (store.isMySql() ? ", INDEX(player_name))" : ")"));
+        }
+        sightingsReady = true;
+    }
+
+    public java.util.concurrent.CompletableFuture<String> loginNotice(String server, UUID id, String playerName) {
+        return java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+            try {
+                return recordAndFind(new Role(server, id, playerName));
+            } catch (SQLException e) {
+                throw new java.util.concurrent.CompletionException(e);
+            }
+        });
+    }
+
+    String recordAndFind(Role role) throws SQLException {
+        try (var c = store.connect()) {
+            ensureSightings(c);
+            String upsert = store.isMySql() ? " ON DUPLICATE KEY UPDATE player_name=?"
+                    : " ON CONFLICT(server_id,login_id) DO UPDATE SET player_name=?";
+            String name = role.name().toLowerCase(java.util.Locale.ROOT);
+            try (var write = c.prepareStatement(
+                    "INSERT INTO InvSync_seen_roles(server_id,login_id,player_name) VALUES (?,?,?)" + upsert)) {
+                write.setString(1, role.server());
+                write.setString(2, role.id().toString());
+                write.setString(3, name);
+                write.setString(4, name);
+                write.executeUpdate();
+            }
+            try (var find = c.prepareStatement("""
+                    SELECT s.server_id,s.login_id,s.player_name FROM InvSync_seen_roles s
+                    WHERE s.player_name=? AND s.server_id<>? AND s.login_id<>?
+                    AND NOT EXISTS (SELECT 1 FROM InvSync_bound_roles b WHERE b.login_id IN (?,s.login_id))
+                    ORDER BY s.server_id,s.login_id
+                    """)) {
+                find.setString(1, name);
+                find.setString(2, role.server());
+                find.setString(3, role.id().toString());
+                find.setString(4, role.id().toString());
+                var peers = new StringBuilder();
+                try (var rows = find.executeQuery()) {
+                    while (rows.next()) {
+                        if (name.equals(rows.getString(3)))
+                            peers.append("\n另一服 ").append(rows.getString(1)).append("　UUID ").append(rows.getString(2));
+                    }
+                }
+                if (peers.isEmpty()) return "";
+                return "InvSync：发现同名但 UUID 不同、尚未绑定的角色。\n当前服 " + role.server()
+                        + "　UUID " + role.id() + peers
+                        + "\n若两个角色都是你的，在一服输入 /invsync code，退出后到另一服输入 /invsync redeem <绑定码>。"
+                        + "核对后用 /invsync keep here 保留兑换服存档，或 /invsync keep other 保留发码服存档。"
+                        + "\n如果不认识另一角色，请联系管理员，不要绑定。";
+            }
+        }
     }
 
     public UUID saveId(UUID loginId) throws SQLException {

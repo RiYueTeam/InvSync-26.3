@@ -25,18 +25,6 @@ public abstract class BindingCommandsMixin {
         };
         var root = Commands.literal("invsync").executes(help);
         root.then(Commands.literal("help").executes(help));
-        root.then(Commands.literal("authenticated").requires(source ->
-                ((CommandSourceAccessor) source).invsync$source() == source.getServer()
-                        && source.getEntity() == null)
-                .then(Commands.argument("player", StringArgumentType.word()).executes(ctx -> {
-                    var source = ctx.getSource();
-                    var player = source.getServer().getPlayerList().getPlayerByName(
-                            StringArgumentType.getString(ctx, "player"));
-                    if (player == null || !InvSync.sync.callbackEnabled()) return 0;
-                    if (InvSync.sync.authenticated(player)) return 1;
-                    player.connection.disconnect(Component.literal("共享存档尚未就绪，请稍后重新登录。"));
-                    return 0;
-                })));
         root.then(Commands.argument("action", StringArgumentType.greedyString()).executes(ctx -> {
             var player = ctx.getSource().getPlayerOrException();
             try {

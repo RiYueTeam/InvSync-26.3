@@ -28,8 +28,6 @@ public final class SyncManager {
     public static final int LEGACY_DATA_VERSION = 3465;
 
     private final Admissions admissions;
-    private final AuthWait authWait = new AuthWait();
-    public void tickAdmissions() { authWait.tick(admissions, net.minecraft.server.network.ServerConfigurationPacketListenerImpl::returnToWorld); }
     private final Map<UUID, ServerPlayer> pendingLeaves = new HashMap<>();
     private final Config config;
     private final PlayerStore store;
@@ -40,7 +38,7 @@ public final class SyncManager {
     public SyncManager(Config config, PlayerStore store) throws IOException, SQLException {
         this.config = config;
         this.store = store;
-        bindings = config.REQUIRE_AUTH_CALLBACK ? new BindingCodes(store) : null;
+        bindings = new BindingCodes(store);
         admissions = new Admissions(store, bindings);
         try (var stream = SyncManager.class.getResourceAsStream("/assets/invsync/blacklist");
              var reader = new java.io.BufferedReader(new InputStreamReader(stream, StandardCharsets.UTF_8))) {
@@ -49,38 +47,19 @@ public final class SyncManager {
     }
 
     public void stop() { retryLeaves(); admissions.close(); store.stop(); }
-    public boolean prepareBeforeJoin() { return store.isMySql() && bindings == null; }
+    public boolean prepareBeforeJoin() { return store.isMySql(); }
     public java.util.concurrent.CompletableFuture<PlayerStore.Session> prepare(UUID id) { return admissions.prepare(id); }
     public void retryLeaves() {
         for (var player : List.copyOf(pendingLeaves.values())) leave(player);
     }
 
-    public boolean join(ServerPlayer player, net.minecraft.network.Connection connection) {
-        if (bindings != null && !authWait.returning(connection, player.getUUID())) return true;
-        return openSession(player);
-    }
-
-    public boolean authenticated(ServerPlayer player) {
-        if (bindings == null) return false;
-        if (sessions.containsKey(player.getUUID())) return !pendingLeaves.containsKey(player.getUUID());
-        if (store.isMySql()) return authWait.begin(player, admissions);
-        if (!openSession(player)) return false;
-        player.inventoryMenu.sendAllDataToRemote();
-        player.setExperienceLevels(player.experienceLevel);
-        return true;
-    }
-
-    public boolean callbackEnabled() {
-        return bindings != null;
-    }
-
     public String bindingCommand(ServerPlayer player, String[] args) throws SQLException {
-        if (bindings == null || pendingLeaves.containsKey(player.getUUID()) || !sessions.containsKey(player.getUUID())) return "请先完成登录认证。";
+        if (pendingLeaves.containsKey(player.getUUID()) || !sessions.containsKey(player.getUUID())) return "共享存档尚未就绪，请稍后再试。";
         return bindings.command(new BindingCodes.Role(config.SERVER_ID, player.getUUID(),
                 player.getGameProfile().name()), args);
     }
 
-    private boolean openSession(ServerPlayer player) {
+    public boolean join(ServerPlayer player) {
         UUID id = player.getUUID();
         if (sessions.containsKey(id)) return false;
 
@@ -95,6 +74,16 @@ public final class SyncManager {
                     net.minecraft.world.level.storage.LevelResource.ROOT), id);
             load(player, session.load());
             sessions.put(id, session);
+            if (bindings != null) {
+                var server = player.level().getServer();
+                bindings.loginNotice(config.SERVER_ID, id, player.getGameProfile().name()).whenComplete((notice, failure) -> {
+                    if (failure != null) InvSync.LOGGER.warn("Could not check same-name roles for {}", id, failure);
+                    else if (!notice.isEmpty()) server.execute(() -> {
+                        if (server.getPlayerList().getPlayer(id) == player && sessions.containsKey(id))
+                            player.sendSystemMessage(net.minecraft.network.chat.Component.literal(notice));
+                    });
+                });
+            }
             return true;
         } catch (Exception e) {
             InvSync.LOGGER.error("Could not load InvSync data for {}", id, e);
@@ -179,7 +168,7 @@ public final class SyncManager {
     }
 
     public void leave(ServerPlayer player) {
-        if (bindings != null) bindings.leave(player.getUUID());
+        bindings.leave(player.getUUID());
         UUID login = player.getUUID();
         if (!sessions.containsKey(login) || pendingLeaves.getOrDefault(login, player) != player) return;
         if (save(player, true)) {

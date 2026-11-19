@@ -222,6 +222,8 @@ public class SetupMySql {
                         + ".InvSync_binding_codes TO " + accountList);
                 statement.executeUpdate("GRANT CREATE, SELECT, INSERT ON " + database
                         + ".InvSync_bound_roles TO " + accountList);
+                statement.executeUpdate("GRANT CREATE, SELECT, INSERT, UPDATE ON " + database
+                        + ".InvSync_seen_roles TO " + accountList);
             } catch (SQLException failure) {
                 try {
                     statement.executeUpdate("DROP USER " + accountList);

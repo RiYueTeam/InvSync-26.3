@@ -39,7 +39,6 @@ dependencies {
 sourceSets.main.java {
     srcDir '../src/main/java'
     include 'mrnavastar/invsync/spigot/**'
-    include 'mrnavastar/invsync/sync/AuthWait.java'
     include 'mrnavastar/invsync/sync/Admissions.java'
     include 'mrnavastar/invsync/sync/MySqlSessions.java'
     include 'mrnavastar/invsync/sync/PlayerStore.java'

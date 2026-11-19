@@ -5,10 +5,7 @@ import mrnavastar.invsync.sync.PlayerStore;
 import mrnavastar.invsync.sync.LocalPlayerArchive;
 import mrnavastar.invsync.sync.BindingCodes;
 import mrnavastar.invsync.sync.Admissions;
-import mrnavastar.invsync.sync.AuthWait;
 import org.bukkit.event.player.AsyncPlayerPreLoginEvent;
-import net.minecraft.server.network.ServerConfigurationPacketListenerImpl;
-import net.minecraft.network.chat.Component;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
 import mrnavastar.invsync.sync.SharedPlayerData;
@@ -41,7 +38,6 @@ public final class InvSyncSpigot extends JavaPlugin implements Listener {
     private final Map<UUID, PlayerStore.Session> sessions = new HashMap<>();
     private final Map<UUID, Player> pendingLeaves = new HashMap<>();
     private Admissions admissions;
-    private final AuthWait authWait = new AuthWait();
     private PlayerStore store;
     private AdvancementAccess advancements;
     private BindingCodes bindings;
@@ -62,11 +58,9 @@ public final class InvSyncSpigot extends JavaPlugin implements Listener {
                     config.getInt("mysql.connect-timeout-ms", 3000), config.getInt("mysql.socket-timeout-ms", 3000));
             advancements = new AdvancementAccess();
             PlayerStore candidate = new PlayerStore(settings);
-            if (config.getBoolean("require-auth-callback")) bindings = new BindingCodes(candidate);
+            bindings = new BindingCodes(candidate);
             admissions = new Admissions(candidate, bindings);
             store = candidate;
-            if (bindings != null) getServer().getScheduler().runTaskTimer(this,
-                    () -> authWait.tick(admissions, this::resumeAuthenticated), 1L, 1L);
             getServer().getScheduler().runTaskTimer(this, this::retryLeaves, 40L, 40L);
             getServer().getScheduler().runTaskTimer(this, this::saveOnlinePlayers, 6000L, 6000L);
         } catch (Exception e) {
@@ -76,7 +70,7 @@ public final class InvSyncSpigot extends JavaPlugin implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR)
     public void prepare(AsyncPlayerPreLoginEvent event) {
-        if (store != null && bindings == null && event.getLoginResult() ==
+        if (store != null && event.getLoginResult() ==
                 AsyncPlayerPreLoginEvent.Result.ALLOWED) {
             // Wait only on Bukkit's asynchronous login thread. The join handler consumes the outcome.
             admissions.prepare(event.getUniqueId()).handle((session, failure) -> null).join();
@@ -88,32 +82,10 @@ public final class InvSyncSpigot extends JavaPlugin implements Listener {
         Player player = event.getPlayer();
         try {
             if (store == null) { reject(event); return; }
-            if (bindings != null) {
-                ServerPlayer handle = handle(player);
-                if (!authWait.returning(AuthWait.connection(handle), player.getUniqueId())) return;
-            }
             if (!openSession(player)) reject(event);
         } catch (Exception e) {
             getLogger().log(Level.WARNING, "Could not resume shared session", e);
             reject(event);
-        }
-    }
-
-    private void resumeAuthenticated(ServerConfigurationPacketListenerImpl listener) {
-        try {
-            // CraftBukkit reuses the entity removed by switchToConfig. Restore its play state
-            // before PrepareSpawnTask inserts it back into the level on the verified connection.
-            ServerPlayer handle = handle(listener.getCraftPlayer());
-            if (handle.hasDisconnected()) {
-                var disconnected = ServerPlayer.class.getDeclaredField("disconnected");
-                disconnected.setAccessible(true);
-                disconnected.setBoolean(handle, false);
-            }
-            handle.unsetRemoved();
-            listener.returnToWorld();
-        } catch (ReflectiveOperationException e) {
-            getLogger().log(Level.SEVERE, "Could not resume verified connection", e);
-            listener.disconnect(Component.literal("共享存档加载失败。"));
         }
     }
 
@@ -127,25 +99,9 @@ public final class InvSyncSpigot extends JavaPlugin implements Listener {
             sender.sendMessage("InvSync 绑定功能未启用。");
             return true;
         }
-        if (args.length == 2 && args[0].equals("authenticated")) {
-            if (sender != getServer().getConsoleSender()) {
-                sender.sendMessage("仅限服务器控制台。");
-                return true;
-            }
-            Player player = getServer().getPlayerExact(args[1]);
-            if (player == null) sender.sendMessage("玩家未在线。");
-            else try {
-                if (pendingLeaves.containsKey(player.getUniqueId()) || (!sessions.containsKey(player.getUniqueId())
-                        && !authWait.begin(handle(player), admissions))) player.kickPlayer("共享存档尚未就绪，请稍后重新登录。");
-            } catch (Exception e) {
-                getLogger().log(Level.WARNING, "Could not prepare authenticated login", e);
-                player.kickPlayer("共享存档加载失败。");
-            }
-            return true;
-        }
         if (!(sender instanceof Player player) || pendingLeaves.containsKey(player.getUniqueId())
                 || !sessions.containsKey(player.getUniqueId())) {
-            sender.sendMessage("请先完成登录认证。");
+            sender.sendMessage("请在游戏内等待共享存档就绪后再试。");
             return true;
         }
         try {
@@ -174,7 +130,15 @@ public final class InvSyncSpigot extends JavaPlugin implements Listener {
                     net.minecraft.world.level.storage.LevelResource.ROOT), player.getUniqueId());
             load(handle, session.load());
             player.updateInventory();
-            sessions.put(player.getUniqueId(), session);
+            sessions.put(id, session);
+            if (bindings != null) {
+                bindings.loginNotice(getConfig().getString("server-id", "spigot"), id, player.getName()).whenComplete((notice, failure) -> {
+                    if (failure != null) getLogger().log(Level.WARNING, "Could not check same-name roles for " + id, failure);
+                    else if (!notice.isEmpty() && isEnabled()) getServer().getScheduler().runTask(this, () -> {
+                        if (getServer().getPlayer(id) == player && sessions.containsKey(id)) player.sendMessage(notice);
+                    });
+                });
+            }
             return true;
         } catch (Exception e) {
             close(session);

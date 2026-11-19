@@ -15,7 +15,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public abstract class PlayerListMixin {
     @Inject(method = "placeNewPlayer", at = @At("HEAD"), cancellable = true)
     private void invsync$load(Connection connection, ServerPlayer player, CommonListenerCookie cookie, CallbackInfo ci) {
-        if (!InvSync.sync.join(player, connection)) {
+        if (!InvSync.sync.join(player)) {
             connection.disconnect(Component.literal("InvSync could not load your data. Please reconnect."));
             ci.cancel();
         }

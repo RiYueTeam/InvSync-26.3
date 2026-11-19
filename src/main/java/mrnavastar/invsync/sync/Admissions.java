@@ -38,7 +38,6 @@ public final class Admissions implements AutoCloseable {
         return future;
     }
 
-    // Only the callback for an authenticated player may consume an auth-mode reservation.
     public synchronized PlayerStore.Session take(UUID id) throws Exception {
         var future = requests.get(id);
         if (future == null || !future.isDone()) return null;
