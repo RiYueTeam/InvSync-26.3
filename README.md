@@ -26,7 +26,7 @@ bash scripts/bootstrap-mysql.sh
 
 脚本每次运行都会创建新容器和新数据卷。已有数据库继续使用下方的配置工具。服务端启动后，可用脚本打印的容器名查看日志或重启容器。
 
-**真实 Linux Docker 实测通过。** 使用 MySQL 8.4.9 在独立回环端口完成容器初始化、自动建库及双服配置生成。生成的两份配置均通过 `VERIFY_IDENTITY` 建立 TLS 1.3 连接，并验证了用 Fabric 配置写入的测试记录可由 Spigot 配置从同一库读出。2.3.8 的两个配置脚本可从[对应标签的 scripts 目录](https://github.com/RiYueTeam/InvSync-26.3/tree/v2.3.8-26.3/scripts) 下载。
+**真实 Linux Docker 实测通过。** 使用 MySQL 8.4.9 在独立回环端口完成容器初始化、自动建库及双服配置生成。生成的两份配置均通过 `VERIFY_IDENTITY` 建立 TLS 1.3 连接，并验证了用 Fabric 配置写入的测试记录可由 Spigot 配置从同一库读出。2.3.9 的两个配置脚本可从[对应标签的 scripts 目录](https://github.com/RiYueTeam/InvSync-26.3/tree/v2.3.9-26.3/scripts) 下载。
 
 ## 一键建库和生成配置
 
@@ -35,7 +35,7 @@ bash scripts/bootstrap-mysql.sh
 在项目目录打开终端，运行一条命令。
 
 ```powershell
-java scripts/SetupMySql.java build/libs/invsync-2.3.8+26.3.jar
+java scripts/SetupMySql.java build/libs/invsync-2.3.9+26.3.jar
 ```
 
 如果 Fabric JAR 在别处，把命令最后一段换成它的路径。脚本会依次询问以下信息。
@@ -56,9 +56,9 @@ java scripts/SetupMySql.java build/libs/invsync-2.3.8+26.3.jar
 
 ## 三步配置 Fabric + Spigot
 
-已经有 MySQL 时，按这三步配置。两端都使用 Minecraft 26.3、Java 25 和 InvSync 2.3.8。
+已经有 MySQL 时，按这三步配置。两端都使用 Minecraft 26.3、Java 25 和 InvSync 2.3.9。
 
-1. **装对应的 JAR。** Fabric 的 `invsync-2.3.8+26.3.jar` 放进 `mods/`。Spigot 的 `invsync-spigot-2.3.8+26.3.jar` 放进 `plugins/`。从旧版升级前，先停服备份两个世界和数据库。
+1. **装对应的 JAR。** Fabric 的 `invsync-2.3.9+26.3.jar` 放进 `mods/`。Spigot 的 `invsync-spigot-2.3.9+26.3.jar` 放进 `plugins/`。从旧版升级前，先停服备份两个世界和数据库。
 2. **照抄下方两份配置。** 把 `db.example.net`、`3306`、`invsync`、`invsync_user` 和 `换成数据库密码` 改成实际值。域名要与数据库证书匹配，库名要在两端完全一致。数据库管理员可先建好该库，账号需要在该库拥有建表、查询、插入和更新权限。
 3. **启动并切服验收。** 用同一账号在 A 服把一件物品放入末影箱，正常退出后进 B 服确认。两端应识别为同一个玩家 UUID。
 
@@ -96,13 +96,13 @@ mysql:
 ## 安装
 
 1. 使用 **Minecraft Java 版 26.3**、**Java 25** 和 **Fabric Loader 0.19.5 或更新版本**。可以在启动服务器的环境里运行 `java -version` 检查 Java 版本。
-2. 从 [2.3.8 发布页](https://github.com/RiYueTeam/InvSync-26.3/releases/tag/v2.3.8-26.3) 下载对应的 JAR，或使用下表中的本地构建产物。单人世界使用对应 Fabric 实例的 `mods/` 目录。
+2. 从 [2.3.9 发布页](https://github.com/RiYueTeam/InvSync-26.3/releases/tag/v2.3.9-26.3) 下载对应的 JAR，或使用下表中的本地构建产物。单人世界使用对应 Fabric 实例的 `mods/` 目录。
 3. 首次启动后按下表找到配置文件，停服修改配置，再重启。普通联机客户端可以直接连接，数据库驱动已随 JAR 打包。
 
 | 服务端 | 本地 JAR | 安装目录 | 配置文件 |
 | --- | --- | --- | --- |
-| Fabric | `build/libs/invsync-2.3.8+26.3.jar` | `mods/` | `config/invsync.json` |
-| Spigot | `spigot/build/libs/invsync-spigot-2.3.8+26.3.jar` | `plugins/` | `plugins/InvSyncSpigot/config.yml` |
+| Fabric | `build/libs/invsync-2.3.9+26.3.jar` | `mods/` | `config/invsync.json` |
+| Spigot | `spigot/build/libs/invsync-spigot-2.3.9+26.3.jar` | `plugins/` | `plugins/InvSyncSpigot/config.yml` |
 
 以下 SQLite 示例适用于 Fabric。Fabric 与 Spigot 混用时，两端都选 MySQL。
 
@@ -280,7 +280,7 @@ mysql:
 
 ## Fabric 与 Spigot 混合端
 
-混合端需要在两端使用 **Minecraft 26.3、Java 25 和 InvSync 2.3.8**。Fabric 服使用本项目的 Fabric JAR，Spigot 服使用 `invsync-spigot-2.3.8+26.3.jar`。
+混合端需要在两端使用 **Minecraft 26.3、Java 25 和 InvSync 2.3.9**。Fabric 服使用本项目的 Fabric JAR，Spigot 服使用 `invsync-spigot-2.3.9+26.3.jar`。
 
 1. 在 Fabric 服的 `mods/` 安装新版，按上面的 MySQL 示例配置 `config/invsync.json`，开启 `SYNC_PLAYER_DATA` 和 `SYNC_ADVANCEMENTS`。
 2. 在 Spigot 服的 `plugins/` 放入配套插件。启动一次生成 `plugins/InvSyncSpigot/config.yml`，然后停服填写数据库连接信息。

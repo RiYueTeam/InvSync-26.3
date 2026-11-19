@@ -2,7 +2,7 @@ plugins {
     id 'java'
 }
 
-version = '2.3.8+26.3'
+version = '2.3.9+26.3'
 group = 'mrnavastar'
 
 java {
