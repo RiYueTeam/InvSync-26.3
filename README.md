@@ -301,6 +301,17 @@ mysql:
 
 从 2.3.6 升级前，停服备份两端的世界目录和 MySQL。如果两端原有末影箱不同，先决定以哪个版本为准。完整共享记录里的末影箱内容会在进服时应用到本地，两边的内容不会合并。历史 Spigot 部分记录缺少末影箱字段时，2.3.7 会保留玩家当前所在服的末影箱，直到新版首次保存该玩家。
 
+### 2.3.9 日月创造镜像服与 Spigot 测试服实测
+
+2026 年 11 月 19 日，两台 Minecraft 26.3 服务器升级到 InvSync 2.3.9，通过 `VERIFY_IDENTITY` 连接同一个 MySQL 数据库。独立 Java 测试角色在原服正常退出，再登录目标服。下表记录的是进服后在目标服实际核对的结果。
+
+| 切换方向 | 背包 | 末影箱 | 经验 | 原版进度 |
+| --- | --- | --- | --- | --- |
+| 日月创造镜像服（Fabric）→ Spigot 测试服 | 7 颗钻石 | 4 个金锭 | 17 级，当前等级内 6 点 | `minecraft:story/mine_stone` 已完成，`minecraft:story/upgrade_tools` 未完成 |
+| Spigot 测试服 → 日月创造镜像服（Fabric） | 11 颗绿宝石 | 2 个铜锭 | 23 级，当前等级内 9 点 | 在 Spigot 完成的 `minecraft:story/upgrade_tools` 和撤销的 `minecraft:story/mine_stone` 均已同步 |
+
+测试角色最终退服后，数据库已释放该角色的占用。
+
 ### 2.3.7 混合端 TLS 实测
 
 已在本机用 Fabric Loader 0.19.5、Spigot 26.3 build 4664 和 MySQL 8.4.13 实测。两服通过 `VERIFY_IDENTITY` 连接同一个数据库，MySQL 会话状态确认两端使用 TLS 1.3。测试客户端用同一 UUID 退出一服后再登录另一服。
