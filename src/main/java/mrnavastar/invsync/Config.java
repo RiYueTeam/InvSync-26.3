@@ -9,6 +9,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 public class Config {
+    public boolean REQUIRE_AUTH_CALLBACK = false;
+    public String SERVER_ID = "fabric";
     public String DATABASE_TYPE = "SQLITE";
     public String DATABASE_NAME = "InvSync";
     public String SQLITE_DIRECTORY = "config/invsync";

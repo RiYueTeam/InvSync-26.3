@@ -1,5 +1,8 @@
 name: InvSyncSpigot
+commands:
+  invsync:
+    description: Authenticated player save binding
 main: mrnavastar.invsync.spigot.InvSyncSpigot
-version: 2.3.7+26.3
+version: 2.3.8+26.3
 api-version: '26.3'
 description: Shares vanilla inventory, experience and advancements with InvSync on Fabric.

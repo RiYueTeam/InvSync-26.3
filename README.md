@@ -26,7 +26,7 @@ bash scripts/bootstrap-mysql.sh
 
 脚本每次运行都会创建新容器和新数据卷。已有数据库继续使用下方的配置工具。服务端启动后，可用脚本打印的容器名查看日志或重启容器。
 
-**真实 Linux Docker 实测通过。** 使用 MySQL 8.4.9 在独立回环端口完成容器初始化、自动建库及双服配置生成。生成的两份配置均通过 `VERIFY_IDENTITY` 建立 TLS 1.3 连接，并验证了用 Fabric 配置写入的测试记录可由 Spigot 配置从同一库读出。修复后的脚本可从 [2.3.7 Release](https://github.com/RiYueTeam/InvSync-26.3/releases/tag/v2.3.7-26.3) 下载。
+**真实 Linux Docker 实测通过。** 使用 MySQL 8.4.9 在独立回环端口完成容器初始化、自动建库及双服配置生成。生成的两份配置均通过 `VERIFY_IDENTITY` 建立 TLS 1.3 连接，并验证了用 Fabric 配置写入的测试记录可由 Spigot 配置从同一库读出。2.3.8 的两个配置脚本可从[对应标签的 scripts 目录](https://github.com/RiYueTeam/InvSync-26.3/tree/v2.3.8-26.3/scripts) 下载。
 
 ## 一键建库和生成配置
 
@@ -35,7 +35,7 @@ bash scripts/bootstrap-mysql.sh
 在项目目录打开终端，运行一条命令。
 
 ```powershell
-java scripts/SetupMySql.java build/libs/invsync-2.3.7+26.3.jar
+java scripts/SetupMySql.java build/libs/invsync-2.3.8+26.3.jar
 ```
 
 如果 Fabric JAR 在别处，把命令最后一段换成它的路径。脚本会依次询问以下信息。
@@ -56,9 +56,9 @@ java scripts/SetupMySql.java build/libs/invsync-2.3.7+26.3.jar
 
 ## 三步配置 Fabric + Spigot
 
-已经有 MySQL 时，按这三步配置。两端都使用 Minecraft 26.3、Java 25 和 InvSync 2.3.7。
+已经有 MySQL 时，按这三步配置。两端都使用 Minecraft 26.3、Java 25 和 InvSync 2.3.8。
 
-1. **装对应的 JAR。** Fabric 的 `invsync-2.3.7+26.3.jar` 放进 `mods/`。Spigot 的 `invsync-spigot-2.3.7+26.3.jar` 放进 `plugins/`。从旧版升级前，先停服备份两个世界和数据库。
+1. **装对应的 JAR。** Fabric 的 `invsync-2.3.8+26.3.jar` 放进 `mods/`。Spigot 的 `invsync-spigot-2.3.8+26.3.jar` 放进 `plugins/`。从旧版升级前，先停服备份两个世界和数据库。
 2. **照抄下方两份配置。** 把 `db.example.net`、`3306`、`invsync`、`invsync_user` 和 `换成数据库密码` 改成实际值。域名要与数据库证书匹配，库名要在两端完全一致。数据库管理员可先建好该库，账号需要在该库拥有建表、查询、插入和更新权限。
 3. **启动并切服验收。** 用同一账号在 A 服把一件物品放入末影箱，正常退出后进 B 服确认。两端应识别为同一个玩家 UUID。
 
@@ -96,13 +96,13 @@ mysql:
 ## 安装
 
 1. 使用 **Minecraft Java 版 26.3**、**Java 25** 和 **Fabric Loader 0.19.5 或更新版本**。可以在启动服务器的环境里运行 `java -version` 检查 Java 版本。
-2. 从 [2.3.7 发布页](https://github.com/RiYueTeam/InvSync-26.3/releases/tag/v2.3.7-26.3) 下载对应的 JAR，或使用下表中的本地构建产物。单人世界使用对应 Fabric 实例的 `mods/` 目录。
+2. 从 [2.3.8 发布页](https://github.com/RiYueTeam/InvSync-26.3/releases/tag/v2.3.8-26.3) 下载对应的 JAR，或使用下表中的本地构建产物。单人世界使用对应 Fabric 实例的 `mods/` 目录。
 3. 首次启动后按下表找到配置文件，停服修改配置，再重启。普通联机客户端可以直接连接，数据库驱动已随 JAR 打包。
 
 | 服务端 | 本地 JAR | 安装目录 | 配置文件 |
 | --- | --- | --- | --- |
-| Fabric | `build/libs/invsync-2.3.7+26.3.jar` | `mods/` | `config/invsync.json` |
-| Spigot | `spigot/build/libs/invsync-spigot-2.3.7+26.3.jar` | `plugins/` | `plugins/InvSyncSpigot/config.yml` |
+| Fabric | `build/libs/invsync-2.3.8+26.3.jar` | `mods/` | `config/invsync.json` |
+| Spigot | `spigot/build/libs/invsync-spigot-2.3.8+26.3.jar` | `plugins/` | `plugins/InvSyncSpigot/config.yml` |
 
 以下 SQLite 示例适用于 Fabric。Fabric 与 Spigot 混用时，两端都选 MySQL。
 
@@ -232,6 +232,24 @@ mysql:
 
 B 服首次接收该玩家时没有本地玩家数据或进度记录。两次退服后都在 MySQL 的 `InvSync_base` 表中查到了同一 UUID 的更新记录。背包、经验和进度双向同步均通过。
 
+## MySQL 断线时如何游玩和切服
+
+首次启动时，两端都需要成功连接同一个 MySQL。玩家开始使用共享背包之前，当前服会取得该角色的独占记录。已绑定的两个登录 UUID 使用同一份共享存档。MySQL 断线或另一台游戏服关闭，都不会自动解除角色占用。
+
+| 情况 | 玩家可以做什么 |
+| --- | --- |
+| 正在原服游玩，MySQL 断线 | 继续游玩。自动保存和退服时，共享数据写入原服本地。 |
+| 断线期间退出后想回原服 | 完成原有登录认证后，只要本地有该角色的占用及存档，且尚未向数据库发起释放，就可以重登。如果交接结果待确认，则等待数据库恢复。 |
+| 断线期间想进入另一服 | 需要等原服提交最终存档。目标服不会使用自己留下的旧背包放行。 |
+| 一台游戏服关闭，另一服能访问 MySQL | 另一服正常接待玩家。已完成交接的角色可以进入，仍由已关闭实例占用的角色要等原实例启动并完成补传。 |
+| MySQL 恢复 | 在线玩家继续使用当前存档。退服后，原服在后台补传，在同一笔事务中保存最终数据并解除占用。交接完成后即可登录另一服。 |
+
+本地在 Fabric 26.3、Spigot 26.3 和开启 TLS 主机名校验的 MySQL 8.4.13 上实测了两个方向。停止 MySQL 后，玩家能修改物品、退出并在原服重登。原服在断库期间正常重启后仍能恢复物品。原服关闭时，另一服能接待独立玩家。原服重新上线并补传后，目标服分别读到了 3 颗钻石和 3 颗绿宝石。另一次测试单独阻断了 Fabric 的数据库账号。使用另一个已绑定 UUID 的玩家在 Spigot 上被拒绝，恢复后读到了末影箱内最新的 9 个金锭。
+
+升级时先让两端玩家退出，备份并停止旧实例，再一起更换两个 JAR。旧版依赖数据库连接锁，不能与采用持久占用记录的版本混跑。新版配置工具会授予同步账号对 `InvSync_sessions` 表的 `CREATE, SELECT, INSERT, UPDATE` 权限。沿用旧账号时，需要管理员补上这张表的权限。
+
+每台游戏服的工作目录下都会生成 `invsync-pending/`。该目录保存该实例的占用凭据和未交接存档。Docker 部署应将它放在各实例独立的持久卷中。原服在断库期间正常关闭后，从原工作目录重启即可继续恢复。此机制要求数据库和本地待提交记录保持连续，不能用旧备份覆盖其中一侧或手动清空占用表。
+
 ## 从 InvSync 2.3.3 迁移
 
 1. 停止所有旧实例，备份数据库、配置和各服世界。SQLite 应在停服后备份数据库目录。MySQL 可导出原数据库。
@@ -241,7 +259,7 @@ B 服首次接收该玩家时没有本地玩家数据或进度记录。两次退
 
 ## Fabric 与 Spigot 混合端
 
-混合端需要在两端使用 **Minecraft 26.3、Java 25 和 InvSync 2.3.7**。Fabric 服使用本项目的 Fabric JAR，Spigot 服使用 `invsync-spigot-2.3.7+26.3.jar`。
+混合端需要在两端使用 **Minecraft 26.3、Java 25 和 InvSync 2.3.8**。Fabric 服使用本项目的 Fabric JAR，Spigot 服使用 `invsync-spigot-2.3.8+26.3.jar`。
 
 1. 在 Fabric 服的 `mods/` 安装新版，按上面的 MySQL 示例配置 `config/invsync.json`，开启 `SYNC_PLAYER_DATA` 和 `SYNC_ADVANCEMENTS`。
 2. 在 Spigot 服的 `plugins/` 放入配套插件。启动一次生成 `plugins/InvSyncSpigot/config.yml`，然后停服填写数据库连接信息。
@@ -273,6 +291,21 @@ mysql:
 | 新玩家先进入 Spigot，再进入 Fabric | 13 块铁锭、12 级和当前等级内 4 点经验，`mine_stone` 已完成，末影箱第 5 槽有 6 个紫水晶碎片 |
 
 分别在 Fabric 和 Spigot 清空末影箱后切服，目标服都显示为空。对缺少 `EnderItems` 的历史 Spigot 部分记录，两端也都验证了首次读取会保留玩家原有的本地末影箱。槽位编号从 0 开始。
+
+### 用登录插件确认身份并绑定两个 UUID
+
+玩家可在游戏中输入 `/invsync help` 或 `/invsync` 查看绑定步骤。
+
+适用于两个服务器使用同一个 MySQL、同名角色有不同 UUID 的情况。两个服务器都要启用认证回调，并在登录插件里设置成功后的控制台命令。Fabric 在 `config/invsync.json` 中设置 `"REQUIRE_AUTH_CALLBACK": true` 和 `"SERVER_ID": "fabric"`。Spigot 在 `plugins/InvSyncSpigot/config.yml` 顶层设置 `require-auth-callback: true` 和 `server-id: spigot`。每个服务器使用独立、固定的标识。默认关闭此模式，沿用原来的进服同步。
+
+配置登录插件在当前玩家已经进入服务器、密码登录或自动登录成功后，立即以**服务器控制台**执行 `invsync authenticated 玩家名`。把“玩家名”替换为该插件提供的玩家名占位符。认证前由登录插件限制玩家移动和操作本地背包，InvSync 等到回调后才读取共享库。请先在两个入口分别验证登录、自动登录和退出重连。
+
+1. 登录第一台服务器，执行 `/invsync code` 获取五分钟有效的一次性码。
+2. 登录第二台服务器，以另一个同名角色执行 `/invsync redeem 绑定码`。核对提示中的服务器及完整 UUID。
+3. 先整理另一侧的背包和末影箱。`/invsync keep here` 选当前角色的共享存档，`/invsync keep other` 选发码角色的共享存档。`/invsync cancel` 放弃选择。若不认识另一角色，请联系管理员。
+4. 双方退出并重新登录。两个登录 UUID 从此读取和保存到选中的 UUID。旧 UUID 的原始数据库记录保留。保留选择面向尚未绑定的两个 UUID，不支持覆盖既有的绑定。
+
+现有数据库需要让两端的 MySQL 账号对 `InvSync_binding_codes` 拥有 CREATE、SELECT、INSERT、UPDATE、DELETE 权限，对 `InvSync_bound_roles` 拥有 CREATE、SELECT、INSERT 权限。新的一键配置会设置这些授权。功能启用后会自动创建表。
 
 ### 构建 Spigot 插件
 

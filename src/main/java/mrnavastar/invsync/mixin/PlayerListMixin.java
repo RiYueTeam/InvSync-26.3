@@ -26,6 +26,11 @@ public abstract class PlayerListMixin {
         InvSync.sync.save(player);
     }
 
+    @Inject(method = "removeAll", at = @At("RETURN"))
+    private void invsync$shutdownPlayers(CallbackInfo ci) {
+        for (var player : ((PlayerList) (Object) this).getPlayers()) InvSync.sync.leave(player);
+    }
+
     @Inject(method = "remove", at = @At("RETURN"))
     private void invsync$release(ServerPlayer player, CallbackInfo ci) {
         InvSync.sync.leave(player);

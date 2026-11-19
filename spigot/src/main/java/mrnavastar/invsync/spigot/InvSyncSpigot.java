@@ -2,6 +2,10 @@ package mrnavastar.invsync.spigot;
 
 import com.google.gson.JsonParser;
 import mrnavastar.invsync.sync.PlayerStore;
+import mrnavastar.invsync.sync.LocalPlayerArchive;
+import mrnavastar.invsync.sync.BindingCodes;
+import org.bukkit.command.Command;
+import org.bukkit.command.CommandSender;
 import mrnavastar.invsync.sync.SharedPlayerData;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.NbtOps;
@@ -32,6 +36,7 @@ public final class InvSyncSpigot extends JavaPlugin implements Listener {
     private final Map<UUID, PlayerStore.Session> sessions = new HashMap<>();
     private PlayerStore store;
     private AdvancementAccess advancements;
+    private BindingCodes bindings;
 
     @Override
     public void onEnable() {
@@ -47,7 +52,9 @@ public final class InvSyncSpigot extends JavaPlugin implements Listener {
                             config.getString("mysql.tls.trust-store-type", "PKCS12"),
                             config.getString("mysql.tls.trust-store-password", "")));
             advancements = new AdvancementAccess();
-            store = new PlayerStore(settings);
+            PlayerStore candidate = new PlayerStore(settings);
+            if (config.getBoolean("require-auth-callback")) bindings = new BindingCodes(candidate);
+            store = candidate;
             getServer().getScheduler().runTaskTimer(this, this::saveOnlinePlayers, 6000L, 6000L);
         } catch (Exception e) {
             getLogger().log(Level.SEVERE, "Could not initialize InvSync. Joins are blocked until it is configured.", e);
@@ -57,24 +64,66 @@ public final class InvSyncSpigot extends JavaPlugin implements Listener {
     @EventHandler(priority = EventPriority.LOWEST)
     public void onJoin(PlayerJoinEvent event) {
         Player player = event.getPlayer();
+        if (store == null || (bindings == null && !openSession(player))) reject(event);
+    }
+
+    @Override
+    public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
+        if (args.length == 0 || (args.length == 1 && args[0].equalsIgnoreCase("help"))) {
+            sender.sendMessage(BindingCodes.HELP);
+            return true;
+        }
+        if (bindings == null || store == null) {
+            sender.sendMessage("InvSync 绑定功能未启用。");
+            return true;
+        }
+        if (args.length == 2 && args[0].equals("authenticated")) {
+            if (sender != getServer().getConsoleSender()) {
+                sender.sendMessage("仅限服务器控制台。");
+                return true;
+            }
+            Player player = getServer().getPlayerExact(args[1]);
+            if (player == null) sender.sendMessage("玩家未在线。");
+            else if (!sessions.containsKey(player.getUniqueId()) && !openSession(player))
+                player.kickPlayer("共享存档加载失败，请重新登录。");
+            return true;
+        }
+        if (!(sender instanceof Player player) || !sessions.containsKey(player.getUniqueId())) {
+            sender.sendMessage("请先完成登录认证。");
+            return true;
+        }
+        try {
+            sender.sendMessage(bindings.command(new BindingCodes.Role(getConfig().getString("server-id", "spigot"),
+                    player.getUniqueId(), player.getName()), args));
+        } catch (Exception e) {
+            getLogger().log(Level.WARNING, "InvSync binding request failed", e);
+            sender.sendMessage("绑定请求失败，请核对账号是否已经绑定。");
+        }
+        return true;
+    }
+
+    private boolean openSession(Player player) {
         PlayerStore.Session session = null;
         try {
             if (store == null || sessions.containsKey(player.getUniqueId())) {
-                reject(event);
-                return;
+                return false;
             }
-            session = store.acquire(player.getUniqueId());
+            UUID id = player.getUniqueId();
+            session = store.acquire(id, bindings);
             if (session == null) {
-                reject(event);
-                return;
+                return false;
             }
-            load(handle(player), session.load());
+            ServerPlayer handle = handle(player);
+            LocalPlayerArchive.capture(handle.level().getServer().getWorldPath(
+                    net.minecraft.world.level.storage.LevelResource.ROOT), player.getUniqueId());
+            load(handle, session.load());
             player.updateInventory();
             sessions.put(player.getUniqueId(), session);
+            return true;
         } catch (Exception e) {
             close(session);
             getLogger().log(Level.SEVERE, "Could not load InvSync data for " + player.getUniqueId(), e);
-            reject(event);
+            return false;
         }
     }
 
@@ -86,17 +135,20 @@ public final class InvSyncSpigot extends JavaPlugin implements Listener {
     @EventHandler(priority = EventPriority.MONITOR)
     public void onQuit(PlayerQuitEvent event) {
         Player player = event.getPlayer();
+        if (bindings != null) bindings.leave(player.getUniqueId());
         PlayerStore.Session session = sessions.remove(player.getUniqueId());
         if (session != null) {
-            save(player, session);
-            close(session);
+            finish(player, session);
         }
     }
 
     @Override
     public void onDisable() {
-        saveOnlinePlayers();
-        sessions.values().forEach(this::close);
+        for (Player player : getServer().getOnlinePlayers()) {
+            var session = sessions.get(player.getUniqueId());
+            if (session != null) finish(player, session);
+        }
+        if (store != null) store.stop();
         sessions.clear();
     }
 
@@ -126,7 +178,13 @@ public final class InvSyncSpigot extends JavaPlugin implements Listener {
         }
     }
 
-    private void save(Player player, PlayerStore.Session session) {
+    private void finish(Player player, PlayerStore.Session session) {
+        if (save(player, session)) {
+            try { session.finish(); } catch (Exception e) { getLogger().log(Level.SEVERE, "Handoff failed", e); }
+        }
+    }
+
+    private boolean save(Player player, PlayerStore.Session session) {
         try {
             ServerPlayer handle = handle(player);
             var previous = session.load();
@@ -143,8 +201,10 @@ public final class InvSyncSpigot extends JavaPlugin implements Listener {
                     handle.level().getServer().getAdvancements(),
                     previous.advancements() == null ? null : JsonParser.parseString(previous.advancements()));
             session.save(new PlayerStore.Snapshot(NbtUtils.addCurrentDataVersion(data).toString(), advancementData, null));
+            return true;
         } catch (Exception e) {
             getLogger().log(Level.SEVERE, "Could not save InvSync data for " + player.getUniqueId(), e);
+            return false;
         }
     }
 

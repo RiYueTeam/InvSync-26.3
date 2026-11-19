@@ -3,7 +3,10 @@
   "package": "mrnavastar.invsync.mixin",
   "compatibilityLevel": "JAVA_25",
   "mixins": [
+    "BindingCommandsMixin",
+    "CommandSourceAccessor",
     "PlayerListMixin",
+    "ServerShutdownMixin",
     "PlayerAdvancementTrackerMixin",
     "ServerStatHandlerMixin"
   ],

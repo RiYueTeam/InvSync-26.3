@@ -21,6 +21,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.sql.SQLException;
 
 public final class SyncManager {
     // InvSync 2.3.3 stripped DataVersion from Minecraft 1.20.1 player data.
@@ -28,29 +29,58 @@ public final class SyncManager {
 
     private final Config config;
     private final PlayerStore store;
+    private final BindingCodes bindings;
     private final List<String> localFields;
     private final Map<UUID, PlayerStore.Session> sessions = new HashMap<>();
 
-    public SyncManager(Config config, PlayerStore store) throws IOException {
+    public SyncManager(Config config, PlayerStore store) throws IOException, SQLException {
         this.config = config;
         this.store = store;
+        bindings = config.REQUIRE_AUTH_CALLBACK ? new BindingCodes(store) : null;
         try (var stream = SyncManager.class.getResourceAsStream("/assets/invsync/blacklist");
              var reader = new java.io.BufferedReader(new InputStreamReader(stream, StandardCharsets.UTF_8))) {
             localFields = reader.lines().map(String::trim).filter(line -> !line.isEmpty()).toList();
         }
     }
 
+    public void stop() { store.stop(); }
+
     public boolean join(ServerPlayer player) {
+        return bindings != null || openSession(player);
+    }
+
+    public boolean authenticated(ServerPlayer player) {
+        if (bindings == null) return false;
+        if (sessions.containsKey(player.getUUID())) return true;
+        if (!openSession(player)) return false;
+        player.inventoryMenu.sendAllDataToRemote();
+        player.setExperienceLevels(player.experienceLevel);
+        return true;
+    }
+
+    public boolean callbackEnabled() {
+        return bindings != null;
+    }
+
+    public String bindingCommand(ServerPlayer player, String[] args) throws SQLException {
+        if (bindings == null || !sessions.containsKey(player.getUUID())) return "请先完成登录认证。";
+        return bindings.command(new BindingCodes.Role(config.SERVER_ID, player.getUUID(),
+                player.getGameProfile().name()), args);
+    }
+
+    private boolean openSession(ServerPlayer player) {
         UUID id = player.getUUID();
         if (sessions.containsKey(id)) return false;
 
         PlayerStore.Session session = null;
         try {
-            session = store.acquire(id);
+            session = store.acquire(id, bindings);
             if (session == null) {
                 InvSync.LOGGER.warn("Player {} still has an active InvSync session", id);
                 return false;
             }
+            LocalPlayerArchive.capture(player.level().getServer().getWorldPath(
+                    net.minecraft.world.level.storage.LevelResource.ROOT), id);
             load(player, session.load());
             sessions.put(id, session);
             return true;
@@ -97,10 +127,10 @@ public final class SyncManager {
         }
     }
 
-    public void save(ServerPlayer player) {
+    public boolean save(ServerPlayer player) {
         UUID id = player.getUUID();
         PlayerStore.Session session = sessions.get(id);
-        if (session == null) return;
+        if (session == null) return false;
 
         try {
             String playerData = null;
@@ -119,8 +149,10 @@ public final class SyncManager {
                     ? ((IPlayerAdvancementTracker) player.getAdvancements()).readAdvancementData().toString() : null;
             String stats = config.SYNC_STATS ? ((IServerStatHandler) player.getStats()).readStatData() : null;
             session.save(new PlayerStore.Snapshot(playerData, advancements, stats));
+            return true;
         } catch (Exception e) {
             InvSync.LOGGER.error("Could not save InvSync data for {}", id, e);
+            return false;
         }
     }
 
@@ -131,7 +163,12 @@ public final class SyncManager {
     }
 
     public void leave(ServerPlayer player) {
-        close(sessions.remove(player.getUUID()));
+        if (bindings != null) bindings.leave(player.getUUID());
+        var session = sessions.get(player.getUUID());
+        if (session != null && save(player)) {
+            try { session.finish(); } catch (Exception e) { InvSync.LOGGER.error("Handoff failed", e); }
+        }
+        sessions.remove(player.getUUID());
     }
 
     private static void close(PlayerStore.Session session) {

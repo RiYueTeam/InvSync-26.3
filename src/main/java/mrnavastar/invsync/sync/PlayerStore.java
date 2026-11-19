@@ -19,7 +19,8 @@ public final class PlayerStore {
     private final Properties properties = new Properties();
     private final Path lockDirectory;
     private final Driver driver;
-    private final String lockPrefix;
+    private final MySqlSessions shared;
+    private final Path journalDirectory;
 
     public record Settings(String type, String name, String sqliteDirectory, String address, String port,
                            String username, String password, TlsSettings tls) {}
@@ -78,14 +79,11 @@ public final class PlayerStore {
             properties.setProperty("password", config.password());
             properties.setProperty("connectTimeout", "3000");
             properties.setProperty("socketTimeout", "3000");
-            lockPrefix = "InvSync:" + UUID.nameUUIDFromBytes(
-                    config.name().getBytes(java.nio.charset.StandardCharsets.UTF_8)).toString().substring(0, 16) + ":";
             lockDirectory = null;
             driver = new com.mysql.cj.jdbc.Driver();
         } else {
             Path dir = Files.createDirectories(Path.of(config.sqliteDirectory())).toRealPath();
             url = "jdbc:sqlite:" + dir.resolve(config.name() + ".db");
-            lockPrefix = null;
             lockDirectory = Files.createDirectories(dir.resolve(config.name() + ".locks"));
             properties.setProperty("busy_timeout", "3000");
             try {
@@ -95,8 +93,9 @@ public final class PlayerStore {
             }
         }
 
-        try (Connection connection = connect(); var statement = connection.createStatement()) {
-            statement.executeUpdate("""
+        journalDirectory = mysql ? Files.createDirectories(Path.of("invsync-pending", config.name(),
+                UUID.nameUUIDFromBytes(url.getBytes(java.nio.charset.StandardCharsets.UTF_8)).toString())) : null;
+        schema("base", """
                     CREATE TABLE IF NOT EXISTS InvSync_base (
                         ID VARCHAR(36) PRIMARY KEY,
                         playerData LONGTEXT,
@@ -105,35 +104,44 @@ public final class PlayerStore {
                         dataInUse INT DEFAULT 0
                     )
                     """);
+        shared = mysql ? new MySqlSessions(this, journalDirectory) : null;
+    }
+
+    void schema(String name, String... ddl) throws SQLException {
+        Path marker = mysql ? journalDirectory.resolve(name + ".initialized") : null;
+        try (Connection c = connect(); var sql = c.createStatement()) {
+            for (String query : ddl) sql.executeUpdate(query);
+            if (marker != null) Files.writeString(marker, "");
+        } catch (SQLException e) {
+            if (marker == null || !Files.isRegularFile(marker) || e.getSQLState() == null
+                    || !e.getSQLState().startsWith("08")) throw e;
+        } catch (IOException e) {
+            throw new SQLException("Could not record schema initialization", e);
         }
     }
 
-    private Connection connect() throws SQLException {
+    boolean isMySql() { return mysql; }
+
+    public void stop() { if (shared != null) shared.stop(); }
+
+    Connection connect() throws SQLException {
         return driver.connect(url, properties);
     }
 
-    public Session acquire(UUID player) throws SQLException, IOException {
-        String id = player.toString();
+    public Session acquire(UUID login, BindingCodes bindings) throws SQLException, IOException {
+        if (mysql) return shared.acquire(login, bindings);
+        String id = (bindings == null ? login : bindings.saveId(login)).toString();
         Connection connection = connect();
         FileChannel channel = null;
         boolean acquired = false;
         try {
-            if (mysql) {
-                try (var statement = connection.prepareStatement("SELECT GET_LOCK(?, 0)")) {
-                    statement.setString(1, lockPrefix + id);
-                    try (var result = statement.executeQuery()) {
-                        acquired = result.next() && result.getInt(1) == 1;
-                    }
-                }
-            } else {
-                channel = FileChannel.open(lockDirectory.resolve(id), StandardOpenOption.CREATE, StandardOpenOption.WRITE);
-                try {
-                    acquired = channel.tryLock() != null;
-                } catch (OverlappingFileLockException ignored) {
-                    acquired = false;
-                }
+            channel = FileChannel.open(lockDirectory.resolve(id), StandardOpenOption.CREATE, StandardOpenOption.WRITE);
+            try {
+                acquired = channel.tryLock() != null;
+            } catch (OverlappingFileLockException ignored) {
+                acquired = false;
             }
-            if (acquired) return new Session(connection, channel, id, mysql);
+            if (acquired) return new JdbcSession(connection, channel, id, false);
             return null;
         } finally {
             if (!acquired) {
@@ -146,7 +154,15 @@ public final class PlayerStore {
 
     public record Snapshot(String playerData, String advancements, String stats) {}
 
-    public record Session(Connection connection, FileChannel lock, String id, boolean mysql) implements AutoCloseable {
+    public interface Session extends AutoCloseable {
+        String id();
+        Snapshot load() throws SQLException;
+        void save(Snapshot snapshot) throws SQLException, IOException;
+        default void finish() throws SQLException, IOException { close(); }
+        void close() throws SQLException, IOException;
+    }
+
+    record JdbcSession(Connection connection, FileChannel lock, String id, boolean mysql) implements Session {
         public Snapshot load() throws SQLException {
             try (var statement = connection.prepareStatement(
                     "SELECT playerData, advancements, stats FROM InvSync_base WHERE ID = ?")) {
