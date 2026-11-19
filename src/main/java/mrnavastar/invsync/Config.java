@@ -16,6 +16,8 @@ public class Config {
     public String SQLITE_DIRECTORY = "config/invsync";
     public String MYSQL_ADDRESS = "127.0.0.1";
     public String MYSQL_PORT = "3306";
+    public int MYSQL_CONNECT_TIMEOUT_MS = 3000;
+    public int MYSQL_SOCKET_TIMEOUT_MS = 3000;
     public String MYSQL_USERNAME = "username";
     public String MYSQL_PASSWORD = "password";
     public String MYSQL_SSL_MODE = "PREFERRED";

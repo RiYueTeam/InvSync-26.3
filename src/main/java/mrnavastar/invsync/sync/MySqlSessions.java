@@ -12,8 +12,8 @@ import mrnavastar.invsync.sync.PlayerStore.Snapshot;
 /** A token stays in MySQL until the final snapshot and release commit together. */
 final class MySqlSessions {
     private enum Phase { CLAIMING, ACTIVE, READY, RELEASING }
-    private record Entry(UUID login, UUID role, UUID token, Phase phase, Snapshot data) {
-        Entry with(Phase next, Snapshot snapshot) { return new Entry(login, role, token, next, snapshot); }
+    private record Entry(UUID login, UUID role, UUID token, Phase phase, Snapshot data, Boolean refreshMapping) {
+        Entry with(Phase next, Snapshot snapshot) { return new Entry(login, role, token, next, snapshot, refreshMapping); }
     }
     private final Gson gson = new Gson();
     private final Path dir;
@@ -58,9 +58,11 @@ final class MySqlSessions {
     PlayerStore.Session acquire(UUID login, BindingCodes bindings) throws IOException, SQLException {
         Slot slot = slots.computeIfAbsent(login, ignored -> new Slot());
         synchronized (slot) {
-            if (slot.online) return null;
+            if (slot.online || slot.finalSnapshot != null) return null;
             if (slot.entry != null) {
-                if (slot.entry.phase() == Phase.READY || slot.entry.phase() == Phase.ACTIVE) {
+                boolean resume = Boolean.FALSE.equals(slot.entry.refreshMapping())
+                        || (slot.entry.refreshMapping() == null && bindings == null);
+                if (resume && (slot.entry.phase() == Phase.READY || slot.entry.phase() == Phase.ACTIVE)) {
                     slot.write(slot.entry.with(Phase.ACTIVE, slot.entry.data()));
                     slot.online = true;
                     return slot;
@@ -85,13 +87,23 @@ final class MySqlSessions {
                     claim.setString(2, role.toString());
                     if (claim.executeUpdate() == 0) { c.rollback(); return null; }
                     Snapshot snapshot = new PlayerStore.JdbcSession(c, null, role.toString(), true).load();
-                    slot.write(new Entry(login, role, token, Phase.CLAIMING, snapshot));
+                    slot.write(new Entry(login, role, token, Phase.CLAIMING, snapshot, false));
                     c.commit();
                     slot.write(slot.entry.with(Phase.ACTIVE, snapshot));
                     slot.online = true;
                     return slot;
                 }
             }
+        }
+    }
+
+    void requireMappingRefresh(UUID login) throws IOException {
+        Slot slot = slots.get(login);
+        if (slot == null) throw new IOException("Missing active session");
+        synchronized (slot) {
+            Entry e = slot.entry;
+            if (!slot.online || e == null) throw new IOException("Binding requires an active session");
+            slot.write(new Entry(login, e.role(), e.token(), e.phase(), e.data(), true));
         }
     }
 
@@ -123,16 +135,36 @@ final class MySqlSessions {
         public synchronized String id() { return entry.role().toString(); }
         public synchronized Snapshot load() { return entry.data(); }
         public synchronized void save(Snapshot data) throws IOException {
-            Snapshot old = entry.data();
-            write(entry.with(Phase.ACTIVE, new Snapshot(
-                    data.playerData() == null ? old.playerData() : data.playerData(),
-                    data.advancements() == null ? old.advancements() : data.advancements(),
-                    data.stats() == null ? old.stats() : data.stats())));
+            write(entry.with(Phase.ACTIVE, merge(data)));
         }
-        public synchronized void finish() throws IOException {
-            write(entry.with(Phase.READY, entry.data()));
+        private Snapshot merge(Snapshot data) {
+            Snapshot old = entry.data();
+            return new Snapshot(data.playerData() == null ? old.playerData() : data.playerData(),
+                    data.advancements() == null ? old.advancements() : data.advancements(),
+                    data.stats() == null ? old.stats() : data.stats());
+        }
+
+        private Snapshot finalSnapshot;
+        public synchronized void finish(Snapshot data) {
+            finalSnapshot = merge(data);
             online = false;
+            persistFinal();
             worker.execute(this::retry);
+        }
+        public synchronized void finish() { finish(entry.data()); }
+
+        private boolean persistFinal() {
+            if (finalSnapshot == null) return true;
+            try {
+                write(entry.with(Phase.READY, finalSnapshot));
+                finalSnapshot = null;
+                return true;
+            } catch (IOException e) {
+                if (!reported) System.getLogger("InvSync").log(System.Logger.Level.WARNING,
+                        "Final snapshot awaiting local disk for " + entry.login(), e);
+                reported = true;
+                return false;
+            }
         }
         public void close() throws IOException { finish(); }
 
@@ -143,7 +175,7 @@ final class MySqlSessions {
         void retry() {
             UUID token;
             synchronized (this) {
-                if (!pending()) return;
+                if (!persistFinal() || !pending()) return;
                 token = entry.token();
             }
             // A failed connection attempt must not hold the original server's login thread.

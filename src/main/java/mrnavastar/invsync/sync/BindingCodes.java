@@ -132,6 +132,7 @@ public final class BindingCodes {
                     insert.setString(3, choice.issuer().id().toString());
                     insert.setString(4, primary.toString());
                     insert.executeUpdate();
+                    if (store.isMySql() && !primary.equals(role.id())) store.requireMappingRefresh(role.id());
                     c.commit();
                 } catch (SQLException e) {
                     c.rollback();

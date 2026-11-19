@@ -7,6 +7,7 @@
     "CommandSourceAccessor",
     "PlayerListMixin",
     "ServerShutdownMixin",
+    "ConfigurationLoginMixin",
     "PlayerAdvancementTrackerMixin",
     "ServerStatHandlerMixin"
   ],

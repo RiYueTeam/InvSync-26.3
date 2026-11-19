@@ -23,7 +23,12 @@ public final class PlayerStore {
     private final Path journalDirectory;
 
     public record Settings(String type, String name, String sqliteDirectory, String address, String port,
-                           String username, String password, TlsSettings tls) {}
+                           String username, String password, TlsSettings tls, int connectTimeoutMs, int socketTimeoutMs) {
+        public Settings(String type, String name, String sqliteDirectory, String address, String port,
+                        String username, String password, TlsSettings tls) {
+            this(type, name, sqliteDirectory, address, port, username, password, tls, 3000, 3000);
+        }
+    }
 
     public record TlsSettings(String mode, String trustStore, String trustStoreType, String trustStorePassword) {
         private void configure(Properties properties) throws IOException {
@@ -77,8 +82,10 @@ public final class PlayerStore {
             config.tls().configure(properties);
             properties.setProperty("user", config.username());
             properties.setProperty("password", config.password());
-            properties.setProperty("connectTimeout", "3000");
-            properties.setProperty("socketTimeout", "3000");
+            if (config.connectTimeoutMs() < 1 || config.socketTimeoutMs() < 1)
+                throw new IllegalArgumentException("MySQL timeouts must be positive milliseconds");
+            properties.setProperty("connectTimeout", Integer.toString(config.connectTimeoutMs()));
+            properties.setProperty("socketTimeout", Integer.toString(config.socketTimeoutMs()));
             lockDirectory = null;
             driver = new com.mysql.cj.jdbc.Driver();
         } else {
@@ -120,7 +127,12 @@ public final class PlayerStore {
         }
     }
 
-    boolean isMySql() { return mysql; }
+    void requireMappingRefresh(UUID login) throws SQLException {
+        try { shared.requireMappingRefresh(login); }
+        catch (IOException e) { throw new SQLException("Could not persist mapping change", e); }
+    }
+
+    public boolean isMySql() { return mysql; }
 
     public void stop() { if (shared != null) shared.stop(); }
 
@@ -158,6 +170,7 @@ public final class PlayerStore {
         String id();
         Snapshot load() throws SQLException;
         void save(Snapshot snapshot) throws SQLException, IOException;
+        default void finish(Snapshot data) throws SQLException, IOException { save(data); finish(); }
         default void finish() throws SQLException, IOException { close(); }
         void close() throws SQLException, IOException;
     }

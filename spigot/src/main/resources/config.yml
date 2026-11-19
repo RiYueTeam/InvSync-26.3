@@ -1,6 +1,8 @@
 require-auth-callback: false
 server-id: spigot
 mysql:
+  connect-timeout-ms: 3000
+  socket-timeout-ms: 3000
   host: 127.0.0.1
   port: 3306
   database: InvSync

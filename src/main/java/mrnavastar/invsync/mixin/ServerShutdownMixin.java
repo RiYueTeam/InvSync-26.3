@@ -9,6 +9,12 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Mixin(MinecraftServer.class)
 public abstract class ServerShutdownMixin {
+    @Inject(method = "tickServer", at = @At("TAIL"))
+    private void invsync$retryFinalSaves(CallbackInfo ci) {
+        InvSync.sync.tickAdmissions();
+        if (((MinecraftServer)(Object)this).getTickCount() % 40 == 0) InvSync.sync.retryLeaves();
+    }
+
     @Inject(method = "stopServer", at = @At("RETURN"))
     private void invsync$stop(CallbackInfo ci) {
         if (InvSync.sync != null) InvSync.sync.stop();

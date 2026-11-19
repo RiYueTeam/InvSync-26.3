@@ -157,6 +157,8 @@ public class SetupMySql {
                   "DATABASE_TYPE": "MYSQL",
                   "DATABASE_NAME": "%s",
                   "MYSQL_ADDRESS": "%s",
+                  "MYSQL_CONNECT_TIMEOUT_MS": 3000,
+                  "MYSQL_SOCKET_TIMEOUT_MS": 3000,
                   "MYSQL_PORT": "%d",
                   "MYSQL_USERNAME": "%s",
                   "MYSQL_PASSWORD": "%s",
@@ -171,6 +173,8 @@ public class SetupMySql {
                 settings.ca() == null ? "" : "config/mysql-ca.p12", storePassword));
         Files.writeString(spigot.resolve("config.yml"), """
                 mysql:
+                  connect-timeout-ms: 3000
+                  socket-timeout-ms: 3000
                   host: '%s'
                   port: %d
                   database: '%s'

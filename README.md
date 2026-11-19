@@ -234,6 +234,27 @@ B 服首次接收该玩家时没有本地玩家数据或进度记录。两次退
 
 ## MySQL 断线时如何游玩和切服
 
+Fabric 在 `config/invsync.json` 中用 `MYSQL_CONNECT_TIMEOUT_MS` 和 `MYSQL_SOCKET_TIMEOUT_MS` 设置建立连接和等待读取的超时。Spigot 在 `plugins/InvSyncSpigot/config.yml` 的 `mysql:` 下设置 `connect-timeout-ms` 和 `socket-timeout-ms`。单位为毫秒，取正整数，省略时两项均为 3000，修改后重启对应实例生效。下例将连接超时设为 2 秒，读取超时设为 5 秒。
+
+```json
+{
+  "MYSQL_CONNECT_TIMEOUT_MS": 2000,
+  "MYSQL_SOCKET_TIMEOUT_MS": 5000
+}
+```
+
+```yaml
+mysql:
+  connect-timeout-ms: 2000
+  socket-timeout-ms: 5000
+```
+
+将示例字段合入已有配置。登录时的数据库操作在后台运行。使用登录插件回调时，已验证的连接会短暂进入 Minecraft 的配置阶段，拿到共享存档再自动返回世界。这个过程会触发一次离开和重新进入世界的事件，使用自定义进退服钩子的服主应验证其兼容性。
+
+本地使用 Java 客户端、EasyAuth 3.4.4 和 Floodgate Fabric 2.2.7-b69 实测，Fabric 与 Spigot 通过 TLS 连接同一 MySQL，背包、末影箱、经验和进度双向同步均通过。EasyAuth 设置 `session-timeout=86400` 时，有效会话内只需输入一次密码；设置为 `-1` 关闭缓存时，返回世界后需要再次输入密码。测试程序在 EasyAuth 放行后执行控制台回调；基岩版登录和线上自动回调仍待验证。
+
+最终存档写入本地失败时，运行中的原服会保留最后的快照并重试。等待期间该角色无法切服；请先恢复磁盘写入，再关闭原服。绑定时如果选择另一 UUID 的存档，原服会先结算旧角色，再按新映射登录。
+
 首次启动时，两端都需要成功连接同一个 MySQL。玩家开始使用共享背包之前，当前服会取得该角色的独占记录。已绑定的两个登录 UUID 使用同一份共享存档。MySQL 断线或另一台游戏服关闭，都不会自动解除角色占用。
 
 | 情况 | 玩家可以做什么 |

@@ -34,7 +34,7 @@ public abstract class BindingCommandsMixin {
                             StringArgumentType.getString(ctx, "player"));
                     if (player == null || !InvSync.sync.callbackEnabled()) return 0;
                     if (InvSync.sync.authenticated(player)) return 1;
-                    player.connection.disconnect(Component.literal("共享存档加载失败，请重新登录。"));
+                    player.connection.disconnect(Component.literal("共享存档尚未就绪，请稍后重新登录。"));
                     return 0;
                 })));
         root.then(Commands.argument("action", StringArgumentType.greedyString()).executes(ctx -> {
